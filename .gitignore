@@ -50,3 +50,6 @@ app.*.map.json
 .widget_preview/
 .vercel
 .env*
+
+# Signed app builds (kept locally, not committed)
+releases/

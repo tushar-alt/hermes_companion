@@ -11,11 +11,11 @@ The project is fully self-hosted. Conversations, files, and history stay on
 your hardware, and the relay can be reached from anywhere over the internet via
 Cloudflare Tunnel, Tailscale, or a reverse proxy.
 
-## Screenshots
-
-| Sessions | Help & prompts | Files | Settings |
-|---|---|---|---|
-| ![Sessions](screenshots/01_sessions.jpg) | ![Help & prompts](screenshots/02_help.jpg) | ![Files](screenshots/03_files.jpg) | ![Settings](screenshots/04_settings.jpg) |
+<p align="center">
+  <img src="screenshots/1.jpg" width="280" alt="">
+  <img src="screenshots/2.jpg" width="280" alt="">
+  <img src="screenshots/3.jpg" width="280" alt="">
+</p>
 
 ## Features
 

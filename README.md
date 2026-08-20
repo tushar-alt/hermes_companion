@@ -1,244 +1,173 @@
 # Hermes Companion
 
-A private chat app for your phone that talks to **Hermes** — your personal AI
-agent — running on your own machine. Ask it anything, send it files, watch it
-work, and get notified when it finishes. The app itself is a Flutter client;
-the brains live in a small **relay server** on your machine.
+Hermes Companion is a private chat app for Android that connects you to your
+own AI agent running on your machine. Instead of talking to your agent through
+WhatsApp, Telegram, or a web interface, you get a dedicated messenger: send
+messages and files, receive markdown-formatted replies, and get notified when
+your agent finishes a task. The app is a Flutter client; the backend is a small
+FastAPI relay that runs next to your agent and provides the connection.
 
-- ⚕ gold-on-dark Hermes theme
-- 🌍 works from anywhere — no same-Wi-Fi requirement (see
-  [Works from anywhere](#works-from-anywhere-no-same-wi-fi))
-- 🔗 one-tap **Copy prompt for agent** — Hermes replies with only a pairing
-  link, the app verifies and connects
-- 💬 multiple chats (one main "WhatsApp-style" sync chat + separate sessions)
-- 📎 send files/photos to your agent, receive files back (images render
-  inline, everything else downloads with progress)
-- 🔔 guaranteed background notifications via a foreground service (20s poll,
-  cooldown, per-chat mute)
-- 💾 offline cache + a persistent outbox (queued messages survive restarts)
-- 📝 markdown-rendered replies (bold, code blocks, lists, links, …)
-- 📲 first-run onboarding: paste a pairing link from your agent and go
+The project is fully self-hosted. Conversations, files, and history stay on
+your hardware, and the relay can be reached from anywhere over the internet via
+Cloudflare Tunnel, Tailscale, or a reverse proxy.
 
----
+## Features
 
-## Quick start (for the user)
+- Self-hosted chat channel for your own AI agent (local LLM, Claude, or any
+  agent with a small HTTP hook)
+- Markdown-rendered replies (bold, code blocks, lists, links)
+- File and image sharing in both directions
+- Offline support: an outbox queues messages until the relay is reachable, and
+  a local cache keeps recent messages readable without a connection
+- Per-session power toggles: pausing a chat stops its agent process entirely,
+  using zero system resources; the session state is shown as red/green dots
+- Unread badges, per-chat mute, and background notifications through an Android
+  foreground service
+- First-run onboarding: paste a pairing link and the app connects; a single
+  "master prompt" can make your agent configure the whole relay automatically
 
-1. Build/install the APK (see [Build](#build)) or grab the latest release.
-2. Open the app. The **first time only**, it shows a pairing screen.
-3. No link yet? Tap **Copy prompt for agent** and send the prompt to Hermes on
-   any channel — it replies with **only** a pairing link. Paste it and tap
-   **Use link** → **Connect** (it verifies the connection first). You can also
-   enter the server URL + token manually, then **Test connection**.
-4. Done. The app lists your chats; the main chat is live-synced with your
-   agent — from anywhere, not just your home Wi-Fi (see
-   [Works from anywhere](#works-from-anywhere-no-same-wi-fi)).
+## How it works
 
-If you skipped pairing, open **Settings** (gear icon) any time — there is a
-small **Copy prompt for agent** button there too.
+The phone runs the Flutter app. The machine runs a small FastAPI relay that
+implements a documented REST API (see below) and exposes one hook your agent
+implements (`run_agent`). The app and the relay authenticate with a bearer
+token. For remote access the relay is exposed through Cloudflare Tunnel,
+Tailscale, or a TLS reverse proxy, so no open ports are required.
 
----
+## Quick start
 
-## Works from anywhere (no same Wi-Fi) 🌍
+1. Build and install the APK (see Build) or use a prebuilt release.
+2. On first launch the app shows a pairing screen.
+3. Paste a pairing link from your agent, or enter the server URL and token
+   manually, then test the connection.
+4. The app lists your chats. The main chat is the admin and sync channel and is
+   always pinned at the top.
 
-This is the app's **first priority**: Hermes Companion replaces WhatsApp and
-Telegram as your channel to the agent, so it must work over the internet — not
-just when the phone and machine share a Wi-Fi network. The app itself is
-network-agnostic (any `http(s)://` URL works, with optional token auth). What
-matters is that your agent's relay is **reachable from the internet**. Pick one:
-
-**Option 1 — Cloudflare Tunnel (free, no open ports, no static IP).**
-Your agent runs one command and gets a public `https://` URL:
-
-```bash
-cloudflared tunnel --url http://localhost:8124
-# → https://<random>.trycloudflare.com
-```
-
-The pairing link then uses that URL:
-`hermes://pair?url=https%3A%2F%2F<random>.trycloudflare.com&token=<TOKEN>`.
-The tunnel URL changes per restart — for a stable one, use a named tunnel
-(`cloudflared tunnel create`) or the dashboard.
-
-**Option 2 — Tailscale / WireGuard VPN.** Install Tailscale on the machine and
-the phone, then use the machine's tailnet IP (`100.x.y.z`) as the URL. No open
-ports, works from anywhere, HTTPS optional if you trust the private network.
-
-**Option 3 — VPS reverse proxy.** Run the relay on your own server behind a
-TLS reverse proxy (Caddy/nginx) and point the app at `https://your-domain`.
-
-Whatever you pick, the **"Copy prompt for agent"** button in the app already
-tells Hermes to use a publicly reachable URL and to reply with only the
-pairing link. If it replies with a LAN URL because nothing public is
-configured yet, set up one of the options above and ask again.
-
-> ⚠️ Over the internet, **always use `https://`**. The app warns you when the
-> configured URL is plain `http://` to a public host. The token is the only
-> thing protecting the relay — do not send it over plain HTTP on public
-> networks.
-
----
-
-## For your Hermes agent 👈 (hand this section to your agent)
-
-> If you are the Hermes agent: your human wants you to run a small HTTP relay
-> on the machine you live on, so their phone app (Hermes Companion) can chat
-> with you — from anywhere, replacing WhatsApp/Telegram. Here is exactly what
-> to do.
-
-### 1. Generate a token
-
-Create a random bearer token (e.g. `openssl rand -hex 24` or
-`secrets.token_hex(24)`). Store it in a config file / env var on your machine.
-
-### 2. Serve the relay — publicly
-
-Run an HTTP server on the LAN (default port `8124`) implementing the
-endpoints in the [API contract](#api-contract) below, **and make it reachable
-from the internet** (see [Works from anywhere](#works-from-anywhere-no-same-wi-fi)):
-Cloudflare Tunnel, Tailscale, or a VPS with TLS. A complete reference
-implementation is in [Reference relay](#reference-relay) — copy it, adapt the
-`agent` hooks, and run it.
-
-### 3. Give the human a pairing link — and nothing else
-
-When the human asks for a pairing link (they'll paste a prompt into you that
-starts with "You are Hermes, my personal agent…"), reply with **a single
-line, nothing else**:
+To get a pairing link, copy the master prompt from the app (onboarding screen,
+or Settings > Help) and send it to your agent. The agent generates a token,
+starts the relay, and replies with a single line:
 
 ```
 hermes://pair?url=<URL-ENCODED-BASE-URL>&token=<TOKEN>
 ```
 
-- `url` = URL-encoded base URL of your relay **as reachable from the phone**.
-  Prefer the public `https://` URL from step 2 over the LAN IP.
-- `token` = the bearer token from step 1 (plain text is fine).
+Paste that line into the app and connect. The app verifies the connection and
+saves the settings; it will not ask again unless you change them in Settings.
 
-The human pastes that line into the app's onboarding screen, taps **Use
-link**, then **Connect**, and the app verifies the connection and saves the
-settings. It will never ask again unless they change it in Settings.
+### Pairing instructions for the agent
 
----
+If you are the agent receiving the master prompt, here is what to do:
+
+1. Generate a random bearer token (`openssl rand -hex 24` or similar) and keep
+   it in a config file or environment variable.
+2. Run the relay (see the reference implementation in `relay/relay.py`) on port
+   8124, bound to `0.0.0.0`, and make it reachable from the internet: Cloudflare
+   Tunnel, Tailscale, or a VPS with TLS. A LAN-only URL works for local use.
+3. Reply with exactly one line, nothing else:
+   `hermes://pair?url=<URL-ENCODED-BASE-URL>&token=<TOKEN>`, where `url` is the
+   full base URL the phone can reach (URL-encoded, `https` preferred) and
+   `token` is the token from step 1.
 
 ## API contract
 
-All endpoints are relative to the relay base URL and return JSON. Requests
-may include `Authorization: Bearer <token>`; the relay SHOULD reject bad
-tokens with `401` (the app treats 401 as "unauthorized" and shows offline).
+All endpoints are relative to the relay base URL and return JSON. Requests may
+include `Authorization: Bearer <token>`; the relay should reject invalid tokens
+with `401`, which the app treats as "unauthorized".
 
 | Method | Path | Query / Body | Response |
 |---|---|---|---|
-| `GET` | `/api/health` | — | `200` `{"ok": true}` (ping) |
-| `GET` | `/api/chats` | — | `{"chats": [{id, name, lastId, isMain, avatar, lastTs}]}` — `lastTs` (unix seconds of the last message) is optional but lets the app sort chats by recency |
-| `GET` | `/api/chat` | — | `{"chatId": "main", "displayName": "Hermes", "lastId": 42}` (the main chat) |
+| `GET` | `/api/health` | | `200` `{"ok": true}` |
+| `GET` | `/api/chats` | | `{"chats": [{id, name, lastId, isMain, avatar, lastTs}]}` — `lastTs` (unix seconds of the last message) is optional but lets the app sort chats by recency |
+| `GET` | `/api/chat` | | `{"chatId": "main", "displayName": "Hermes", "lastId": 42}` (the main chat) |
 | `POST` | `/api/chat/new` | body `{"name": "Trip Planning"}` | `200` `{"id": "...", "name": "..."}` |
-| `DELETE` | `/api/chat/<id>` | — | `200` — **must also terminate that chat's agent session** (kill the CLI/process) and delete all its messages. Main chat must be refused. |
-| `POST` | `/api/chat/<id>/pause` | — | `200` — stop this chat's agent session (CLI goes to sleep, zero resources) |
-| `POST` | `/api/chat/<id>/resume` | — | `200` — wake this chat's agent session back up |
+| `DELETE` | `/api/chat/<id>` | | `200` — must also terminate that chat's agent session and delete all its messages. The main chat must be refused. |
+| `POST` | `/api/chat/<id>/pause` | | `200` — stop this chat's agent session (zero resources) |
+| `POST` | `/api/chat/<id>/resume` | | `200` — start this chat's agent session again |
 | `GET` | `/api/messages` | `after=<int>&chat=<id>` | `{"messages": [{id, role, text, ts, media: [paths]}], "lastId": N}` |
 | `POST` | `/api/send` | body `{"text": "...", "chat": "<id>", "media": [paths]}` | `200` |
-| `GET` | `/api/status` | — | `{"chats": {<id>: {"status": "idle"\|"running", "since": epoch_s, "detail": "...", "paused": false}}}` — `paused: true` means the session is asleep (the app shows a red dot and the power toggle off) |
-| `GET` | `/api/files` | — | `{"files": [{name, path, size, mtime}]}` — listing of `~/Shared` |
-| `GET` | `/api/media` | `path=<urlencoded>` | raw bytes of the file (authed) |
+| `GET` | `/api/status` | | `{"chats": {<id>: {"status": "idle"\|"running", "since": epoch_s, "detail": "...", "paused": false}}}` — `paused: true` means the session is asleep |
+| `GET` | `/api/files` | | `{"files": [{name, path, size, mtime}]}` — listing of `~/Shared` |
+| `GET` | `/api/media` | `path=<urlencoded>` | raw file bytes (authenticated) |
 | `POST` | `/api/upload` | `name=<urlencoded>&chat=<id>`, body = raw bytes | `200` `{"path": "..."}` server-side path |
 
-Message fields:
-
-- `id`: monotonically increasing int (used as a read/notify watermark)
-- `role`: `"user"` (sent by the app) or `"assistant"` (your replies)
-- `text`: plain text (may contain markdown — the app renders it)
-- `ts`: unix seconds
-- `media`: list of server-side paths (use `/api/media?path=...` to fetch)
-
-Your replies MUST use `role: "assistant"`. When you finish a task, send a
-reply — the app pings the human if they aren't looking. Markdown is
-encouraged: `**bold**`, `` `code` ``, fenced ``` blocks, lists, `> quotes`.
-
----
+Message fields: `id` (monotonically increasing int, used as a read/notify
+watermark), `role` (`"user"` or `"assistant"`), `text` (plain text, may contain
+markdown), `ts` (unix seconds), `media` (list of server-side paths, fetched via
+`/api/media`). Replies must use `role: "assistant"`.
 
 ## Reference relay
 
-A complete minimal implementation (Python + FastAPI) lives in
-[`relay/relay.py`](relay/relay.py) — run it, then send your human the pairing
-link it prints at startup:
+A minimal, complete implementation (Python + FastAPI) lives in
+[`relay/relay.py`](relay/relay.py). Run it, then send the user the pairing link
+it prints at startup:
 
 ```bash
 pip install -r relay/requirements.txt
 python relay/relay.py
 ```
 
-The relay implements every endpoint in the [API contract](#api-contract):
-`/api/health`, `/api/chats`, `/api/chat`, `/api/chat/new`,
-`/api/chat/<id>` (DELETE), `/api/chat/<id>/pause`, `/api/chat/<id>/resume`,
-`/api/messages`, `/api/send`, `/api/status`, `/api/files`, `/api/media`,
-`/api/upload`. Wire the agent hooks (`run_agent`, `start_agent_session`,
-`stop_agent_session`) to your real agent logic.
+It implements every endpoint in the API contract. Wire the agent hooks
+(`run_agent`, `start_agent_session`, `stop_agent_session`) to your agent logic.
 
-Security notes for it:
+## Security
 
-- The app talks **plain HTTP on your LAN** (cleartext is explicitly enabled in
-  the app manifest). If you expose the relay beyond your home network, put a
-  TLS reverse proxy in front of it and use `https://` in the pairing link.
-- `/api/upload` must NOT allow path traversal — keep files inside `~/Shared`.
+- The token is stored in app-private SharedPreferences (plain). For stronger
+  protection, move it to `flutter_secure_storage` (Android Keystore); the
+  storage layer is the only place that would change.
+- Cleartext HTTP is enabled in the manifest so the app can reach a plain-HTTP
+  relay on the local network. Do not expose the relay to the public internet
+  without TLS, and use `https://` for any non-LAN address.
+- `/api/upload` must not allow path traversal; keep uploaded files inside
+  `~/Shared`.
 
----
+## Build and test
 
-## Build
-
-Requires Flutter ≥ 3.24 (Dart SDK ^3.13.0).
+Requires Flutter 3.24+ (Dart SDK ^3.13.0).
 
 ```bash
 flutter pub get
-flutter build apk --release        # output: build/app/outputs/flutter-apk/app-release.apk
+flutter analyze
+flutter test
+flutter build apk --release
 ```
 
-Install the APK on your phone (`adb install -r ...` or copy it over). The app
-requests notification permission on first launch — allow it or you'll miss
-replies.
-
-Run the tests:
-
-```bash
-flutter analyze && flutter test
-```
+The APK is written to `build/app/outputs/flutter-apk/app-release.apk`. Install
+it on the phone with `adb install -r ...`. The app requests notification
+permission on first launch; allow it to receive replies.
 
 ## Project layout
 
 ```
 lib/
-  main.dart              entry point (boots notifications + foreground service)
-  theme.dart             palette + dark Hermes theme
-  models.dart            DTOs: ChatInfo, ChatStatus, FileEntry, ChatMessage, …
-  api.dart               RelayApi — thin HTTP client for the relay
-  storage.dart           AppPrefs — crash-safe SharedPreferences wrapper
-                         (credentials, watermarks, outbox, offline cache)
-  notifications.dart     local notifications + 20s background foreground service
+  main.dart              entry point (boots notifications and the foreground service)
+  theme.dart             palette and dark theme
+  models.dart            data models (ChatInfo, ChatStatus, FileEntry, ChatMessage, ...)
+  api.dart               RelayApi — HTTP client for the relay
+  storage.dart           AppPrefs — SharedPreferences wrapper (credentials,
+                         watermarks, outbox, offline cache)
+  notifications.dart     local notifications and the 20s background service
   markdown.dart          in-house markdown renderer for agent replies
-  onboarding.dart        first-run pairing screen + hermes://pair link parser
+  onboarding.dart        first-run pairing screen and pairing-link parser
   agent_prompt.dart      the master prompt handed to the agent
-  prompts.dart           master prompt + guide snippets shown in the help drawer
+  prompts.dart           master prompt and guide snippets for the help drawer
   screens/               home (chat list, sorting, session toggles), chat, files
   widgets/               chat tile, cartoon avatar, message bubble, typing
                          bubble, help drawer, status dot, download dialog
 relay/
-  relay.py               reference FastAPI relay (run it on your machine)
+  relay.py               reference FastAPI relay
   requirements.txt       relay dependencies
-test/                    unit + widget tests (flutter test)
+test/                    unit and widget tests
 ```
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| "offline — relay unreachable" | Machine and phone on same network? Relay running on `0.0.0.0`? Wrong port/IP? Check with **Settings → Test**. |
-| "Invalid URL — check the link for stray spaces" (or `FormatException … not a valid link-local address`) | The pairing link got a space in the hostname when copied through chat. Re-copy it — the app now strips spaces/`%20` automatically, so a fresh paste works. |
-| Notifications don't arrive | Allow notifications; keep the foreground service running (don't swipe-kill the app — the service is restarted on boot); check per-chat mute in the chat's ⚠ status sheet. |
-| Downloads fail for big files | The app streams with progress; if it times out, the relay must be reachable and fast on the LAN. |
-| Can't reach relay from phone but works on desktop | Firewall — allow inbound TCP on port 8124 for your LAN subnet. |
+| App shows "offline — relay unreachable" | Check that the phone and machine can reach each other, the relay is running on `0.0.0.0`, and the URL/port are correct. Use Settings > Test. |
+| Pairing link rejected | The link may contain a stray space from copy-paste. Re-copy it; the app strips whitespace and `%20` automatically. |
+| Notifications do not arrive | Allow notifications, keep the foreground service running (do not swipe-kill the app), and check the per-chat mute setting. |
+| Phone cannot reach the relay, but the desktop can | Allow inbound TCP on port 8124 for your LAN subnet in the firewall. |
 
-## Security notes
+## License
 
-- The token is stored in app-private SharedPreferences (plain). For stronger
-  protection, move it to `flutter_secure_storage` (Keystore) — the storage
-  layer is the only place that changes.
-- Cleartext HTTP is enabled so the app can reach a plain-HTTP LAN relay. Do
-  not expose that relay to the public internet without TLS.
+MIT. See [LICENSE](LICENSE).

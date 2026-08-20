@@ -414,3 +414,40 @@ architecture discussion (the tunnel/relay part is squarely on-topic):
 > Also running a 20s foreground-service poller on the phone so I get notified when the agent finishes a task — that part is Android-side, but the lifecycle is worth thinking about if you expose any long-running job this way.
 >
 > Happy to go deeper on the tunnel config or the relay design. (I open-sourced the whole thing if anyone wants the details — happy to share the link in the comments.)
+
+---
+
+## 21. r/HermesAgent — ✅ postable — the exact target audience
+
+**Research findings:** r/HermesAgent (case-insensitive: r/hermesagent) is the
+Reddit community for **Hermes Agent** — the popular AI-agent product. Active
+community with megathreads and a community-maintained guide repo
+([hermesagent-megathreads](https://github.com/AtlasOmnia/hermesagent-megathreads));
+extensive discussion (thousands of comments analyzed in "OpenClaw vs Hermes"
+write-ups, "20 Biggest Problems with Hermes Agent" roundups, etc.).
+
+**Audience match: excellent.** Your app IS a companion for Hermes — every user
+of this sub is a potential user of your app. If your own agent is the Hermes
+Agent product, this is the single most on-topic community on Reddit for you.
+
+**Rules (verify live before posting):** an official rules snapshot couldn't be
+retrieved from third-party sources — check the sidebar + pinned threads when
+you post. Product subs like this generally: require a flair, expect
+self-promotion to be clearly disclosed as your own project, prefer
+value-first posts over bare link drops, and route announcements through
+pinned megathreads when available. Disclose affiliation, engage with every
+comment, and don't post repeatedly.
+
+> **Title:** I built a companion app for Hermes — chat with your agent from your phone, fully self-hosted (open source)
+>
+> I use Hermes as my personal agent, and for a long time the only way to chat with it was through WhatsApp or a terminal. So I built a proper mobile companion: a Flutter Android app that connects to a small FastAPI relay running on my machine, which plugs into Hermes with a single hook.
+>
+> The whole thing is self-hosted — messages, history and media stay on my hardware, no cloud involved. Remote access goes through Cloudflare Tunnel/Tailscale, so I can reach Hermes from anywhere without opening a port.
+>
+> What it does: markdown-rendered replies, sending images/files both ways, an offline outbox (messages queue when I have no signal), per-session pause/resume with red/green status dots (paused actually kills the session process, so it uses zero resources), unread badges, per-chat mute, and notifications through an Android foreground service so I know the moment Hermes finishes a task.
+>
+> Setup is one paste: the app hands you a "master prompt" — you send it to Hermes, and it generates a token, configures the relay itself, and replies with a pairing link. No manual IP or config wrangling.
+>
+> Open source (MIT): https://github.com/tushar-alt/hermes_companion
+>
+> Would love feedback from other Hermes users — especially on the session lifecycle and the pairing flow.

@@ -13,9 +13,9 @@ Cloudflare Tunnel, Tailscale, or a reverse proxy.
 
 ## Screenshots
 
-| Chat list | Chat | Files | Onboarding |
+| Sessions | Help & prompts | Files | Settings |
 |---|---|---|---|
-| ![Chat list](screenshots/01_home.jpg) | ![Chat](screenshots/02_chat.jpg) | ![Files](screenshots/03_files.jpg) | ![Onboarding](screenshots/04_onboarding.jpg) |
+| ![Sessions](screenshots/01_sessions.jpg) | ![Help & prompts](screenshots/02_help.jpg) | ![Files](screenshots/03_files.jpg) | ![Settings](screenshots/04_settings.jpg) |
 
 ## Features
 

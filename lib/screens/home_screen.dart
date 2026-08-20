@@ -11,6 +11,7 @@ import '../storage.dart';
 import '../theme.dart';
 import '../widgets/chat_tile.dart';
 import '../widgets/help_drawer.dart';
+import '../widgets/icon_avatar.dart';
 import 'chat_screen.dart';
 import 'files_screen.dart';
 
@@ -53,6 +54,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _booted = false;
   bool _appVisible = true;
   int _tab = 0; // 0 chats, 1 files, 2 health
+  ChatInfo? _selectedChat; // dual-pane: conversation shown in the right pane
+  String _chatQuery = ''; // dual-pane left-panel search
 
   @override
   void initState() {
@@ -104,6 +107,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _statuses = statuses;
         _connected = true;
         _everChecked = true;
+        // Drop the dual-pane selection if that chat no longer exists.
+        if (_selectedChat != null &&
+            !_chats.any((c) => c.id == _selectedChat!.id)) {
+          _selectedChat = null;
+        }
       });
     } catch (_) {
       if (!mounted) return;
@@ -124,6 +132,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _openChat(ChatInfo chat) {
+    // Wide screens: select the conversation into the right pane.
+    if (MediaQuery.sizeOf(context).width >= 768) {
+      setState(() => _selectedChat = chat);
+      return;
+    }
     Navigator.of(context).push(
       PageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 260),
@@ -276,17 +289,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             return Column(
               children: [
                 if (wide) _buildDesktopHeader() else _buildMobileHeader(),
-                Expanded(
-                  child: IndexedStack(
-                    index: _tab,
-                    children: [
-                      _buildChatsTab(),
-                      FilesScreen(api: _api, embedded: true),
-                      FilesScreen(
-                          api: _api, embedded: true, initialTab: 'health'),
-                    ],
-                  ),
-                ),
+                if (wide) _buildWideTabs(),
+                Expanded(child: _buildBody(wide)),
                 if (!wide) _buildBottomNav(),
               ],
             );
@@ -294,6 +298,306 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ),
       ),
     );
+  }
+
+  Widget _buildBody(bool wide) {
+    if (!wide) {
+      return IndexedStack(
+        index: _tab,
+        children: [
+          _buildChatsTab(),
+          FilesScreen(api: _api, embedded: true),
+          FilesScreen(api: _api, embedded: true, initialTab: 'health'),
+        ],
+      );
+    }
+    switch (_tab) {
+      case 1:
+        return FilesScreen(api: _api, embedded: true);
+      case 2:
+        return FilesScreen(api: _api, embedded: true, initialTab: 'health');
+      default:
+        return _buildDualPane();
+    }
+  }
+
+  /// Desktop: slim Chats / Files / Health tab strip under the header.
+  Widget _buildWideTabs() {
+    Widget tab(int index, String label) {
+      final active = _tab == index;
+      return InkWell(
+        onTap: () => setState(() => _tab = index),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          decoration: BoxDecoration(
+            border: Border(
+                bottom: BorderSide(
+                    color: active ? gold : Colors.transparent, width: 2)),
+          ),
+          child: Text(label,
+              style: TextStyle(
+                  fontFamily: monoFamily,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: active ? gold : sand)),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: const BoxDecoration(
+        color: surface,
+        border: Border(bottom: BorderSide(color: borderColor)),
+      ),
+      child: Row(
+        children: [
+          tab(0, 'Chats'),
+          tab(1, 'Files'),
+          tab(2, 'Health'),
+        ],
+      ),
+    );
+  }
+
+  /// Desktop dual-pane: chat list + search on the left, active conversation
+  /// on the right (per the design's wide layout).
+  Widget _buildDualPane() {
+    return Row(
+      children: [
+        SizedBox(width: 320, child: _buildChatListPanel()),
+        const VerticalDivider(width: 1, color: borderColor),
+        Expanded(
+          child: _selectedChat == null
+              ? _buildEmptyConversation()
+              : ChatScreen(
+                  key: ValueKey('pane-${_selectedChat!.id}'),
+                  chatId: _selectedChat!.id,
+                  chatName: _selectedChat!.name,
+                  embedded: true,
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmptyConversation() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: surfaceHigh,
+              border: Border.all(color: borderColor),
+            ),
+            child: const Icon(Icons.chat_bubble_outline_rounded,
+                color: gold, size: 28),
+          ),
+          const SizedBox(height: 14),
+          Text('Select a conversation',
+              style: GoogleFonts.geist(
+                  fontSize: 18, fontWeight: FontWeight.w500, color: cream)),
+          const SizedBox(height: 4),
+          const Text('Choose a chat from the list to start chatting.',
+              style: TextStyle(color: sand, fontSize: 13)),
+        ],
+      ),
+    );
+  }
+
+  /// Left pane: "New Conversation" + search + compact chat list.
+  Widget _buildChatListPanel() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: gold,
+                  foregroundColor: onPrimary,
+                  padding: const EdgeInsets.symmetric(vertical: 11),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: _createChat,
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: const Text('New Conversation',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                onChanged: (v) => setState(() => _chatQuery = v),
+                style: const TextStyle(color: cream, fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: 'Search chats…',
+                  hintStyle: const TextStyle(color: sand, fontSize: 13),
+                  prefixIcon: const Icon(Icons.search_rounded,
+                      color: sand, size: 18),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(child: _buildChatListItems()),
+      ],
+    );
+  }
+
+  Widget _buildChatListItems() {
+    final q = _chatQuery.trim().toLowerCase();
+    final visible = q.isEmpty
+        ? _chats
+        : _chats.where((c) => c.name.toLowerCase().contains(q)).toList();
+    if (visible.isEmpty) {
+      return const Center(
+        child: Text('No chats yet — start a new conversation',
+            style: TextStyle(color: sand, fontSize: 13)),
+      );
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
+      itemCount: visible.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 4),
+      itemBuilder: (context, i) => _buildCompactChatItem(visible[i]),
+    );
+  }
+
+  Widget _buildCompactChatItem(ChatInfo chat) {
+    final selected = _selectedChat?.id == chat.id;
+    final status = _statuses[chat.id];
+    final paused = status?.paused == true;
+    final running = status?.isRunning == true;
+    final seen = _prefs?.seenFor(chat.id) ?? 0;
+    final unread = chat.lastId > seen ? chat.lastId - seen : 0;
+    return Material(
+      color: selected ? ink2 : Colors.transparent,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: () => _openChat(chat),
+        onLongPress: chat.isMain
+            ? null
+            : () async {
+                if (await _confirmDelete(chat)) await _deleteChat(chat);
+              },
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+                color: selected ? gold.withValues(alpha: 0.7) : Colors.transparent),
+          ),
+          child: Row(
+            children: [
+              IconAvatar(
+                  seed: '${chat.id}|${chat.name}',
+                  size: 36,
+                  statusActive: !paused),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            chat.isMain ? 'Hermes Admin' : chat.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w500,
+                                color: selected ? goldHi : cream),
+                          ),
+                        ),
+                        Text(_compactTime(chat.lastTs),
+                            style: TextStyle(
+                                fontFamily: monoFamily,
+                                fontSize: 10,
+                                color: outline)),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            paused
+                                ? 'Paused'
+                                : running
+                                    ? 'Running'
+                                    : chat.isMain
+                                        ? 'WhatsApp sync'
+                                        : 'Idle',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontFamily: monoFamily,
+                                fontSize: 10,
+                                color: paused
+                                    ? red
+                                    : running
+                                        ? greenBright
+                                        : sand),
+                          ),
+                        ),
+                        if (unread > 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 5, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: gold,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              unread > 99 ? '99+' : '$unread',
+                              style: const TextStyle(
+                                  color: onPrimary,
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _compactTime(double ts) {
+    if (ts <= 0) return '';
+    final dt = DateTime.fromMillisecondsSinceEpoch((ts * 1000).round());
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(dt.year, dt.month, dt.day);
+    final diff = today.difference(day).inDays;
+    if (diff == 0) {
+      final h = dt.hour.toString().padLeft(2, '0');
+      final m = dt.minute.toString().padLeft(2, '0');
+      return '$h:$m';
+    }
+    if (diff == 1) return 'Yesterday';
+    if (diff < 7) {
+      const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      return days[dt.weekday - 1];
+    }
+    return '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}';
   }
 
   // ── headers ────────────────────────────────────────────────────────────

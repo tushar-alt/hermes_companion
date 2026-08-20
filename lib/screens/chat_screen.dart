@@ -19,10 +19,14 @@ import 'files_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen(
-      {super.key, required this.chatId, required this.chatName});
+      {super.key, required this.chatId, required this.chatName, this.embedded = false});
 
   final String chatId;
   final String chatName;
+
+  /// True when rendered inside the desktop dual-pane shell (no back button;
+  /// the chat list stays visible on the left).
+  final bool embedded;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -736,11 +740,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       ),
       child: Row(
         children: [
-          IconButton(
-            onPressed: () => Navigator.pop(context),
-            icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                color: sand, size: 18),
-          ),
+          if (!widget.embedded)
+            IconButton(
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                  color: sand, size: 18),
+            ),
           IconAvatar(
               seed: widget.chatId, size: 36, statusActive: !paused),
           const SizedBox(width: 10),

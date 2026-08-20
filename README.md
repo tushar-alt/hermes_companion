@@ -11,6 +11,12 @@ The project is fully self-hosted. Conversations, files, and history stay on
 your hardware, and the relay can be reached from anywhere over the internet via
 Cloudflare Tunnel, Tailscale, or a reverse proxy.
 
+## Screenshots
+
+| Chat list | Chat | Files | Onboarding |
+|---|---|---|---|
+| ![Chat list](screenshots/01_home.jpg) | ![Chat](screenshots/02_chat.jpg) | ![Files](screenshots/03_files.jpg) | ![Onboarding](screenshots/04_onboarding.jpg) |
+
 ## Features
 
 - Self-hosted chat channel for your own AI agent (local LLM, Claude, or any

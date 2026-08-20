@@ -56,6 +56,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool _showCacheBanner = false;
   bool _showJumpButton = false;
 
+  /// True while the user is looking at the newest message (within 300px of
+  /// the bottom of the reversed list). Once the user scrolls up to read
+  /// history this flips false, and incoming messages must not yank the list
+  /// back down until they scroll back to the bottom (or tap the jump button).
+  bool _atBottom = true;
+
   @override
   void initState() {
     super.initState();
@@ -76,18 +82,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   /// WhatsApp behaviour: when the user taps the input box and the keyboard
-  /// opens, keep the last message visible above it.
+  /// opens, keep the last message visible above it — but only if they haven't
+  /// scrolled up to read history (don't yank them away from it).
   void _onInputFocus() {
-    if (_inputFocus.hasFocus) _scrollToBottom();
+    if (_inputFocus.hasFocus && _atBottom) _scrollToBottom();
   }
 
   void _onScroll() {
     if (!_scrollController.hasClients) return;
     // The list is reversed, so offset 0 is the newest message.
     final atBottom = _scrollController.position.pixels < 300;
-    if (atBottom != !_showJumpButton) {
-      setState(() => _showJumpButton = !atBottom);
-    }
+    if (atBottom == _atBottom && _showJumpButton == !atBottom) return;
+    setState(() {
+      _atBottom = atBottom;
+      _showJumpButton = !atBottom;
+    });
   }
 
   @override
@@ -282,7 +291,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       if (!_agentBusy && _queue.isNotEmpty && !_flushing) {
         _flushQueue();
       }
-      _scrollToBottom();
+      // Stay glued to the newest message only while the user is already at
+      // the bottom; if they scrolled up, incoming messages must not yank the
+      // list back down (the jump-to-bottom button gets them back).
+      if (_atBottom) _scrollToBottom();
     } catch (_) {
       if (!mounted) return;
       setState(() => _connected = false);

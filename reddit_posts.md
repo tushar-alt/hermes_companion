@@ -395,6 +395,22 @@ can be revealed inside the SMT post. **Flair:** `Software`.
 
 ---
 
-## 20. r/homelab — see post below
+## 20. r/homelab — ⚠️ self-promo effectively BANNED — engineering discussion only
 
-*(rules verified; post drafted by a research pass — insert here before posting)*
+**Rules:** strict no-advertising/no-self-promotion (linking your own project
+gets removed regardless of effort); posts must be homelab-relevant (servers,
+networking, self-hosting infra); no low-effort posts. **Do NOT put the repo link
+in the post** — if someone asks in the comments, share it there. Post as an
+architecture discussion (the tunnel/relay part is squarely on-topic):
+
+> **Title:** Exposing a local AI agent to my phone with zero open ports — Cloudflare Tunnel + a tiny relay (homelab pattern)
+>
+> Sharing a homelab pattern I've been running for a while: giving a service on my home server a secure channel to an Android app without opening a single port on my router.
+>
+> Setup: a small FastAPI relay runs next to the service (in my case, an AI agent). The relay is the only piece that's reachable — it authenticates with a bearer token and exposes a small REST API. Outbound-only access is handled by `cloudflared tunnel --url http://localhost:8124`, so the phone hits a public https URL while nothing on my LAN is exposed. Tailscale is the fallback when I want to stay off Cloudflare's edge.
+>
+> Why this beats port forwarding for me: no static IP needed, no router config, TLS for free, and I can shut the whole thing down by killing the tunnel process. The relay itself is deliberately tiny — ~200 lines, single process, it just marshals messages, media and session state to the agent hook.
+>
+> Also running a 20s foreground-service poller on the phone so I get notified when the agent finishes a task — that part is Android-side, but the lifecycle is worth thinking about if you expose any long-running job this way.
+>
+> Happy to go deeper on the tunnel config or the relay design. (I open-sourced the whole thing if anyone wants the details — happy to share the link in the comments.)

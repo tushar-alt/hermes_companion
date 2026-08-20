@@ -1,7 +1,6 @@
-# Only the Flutter web build output is deployed — keep everything else out
-# (the repo root contains Android build artifacts, caches, etc.).
-*
-!build/
-!build/web/
-!build/web/**
-!vercel.json
+# Generated / machine-local files never belong in a deployment.
+# (Git-based deploys already exclude gitignored files; this also covers CLI deploys.)
+.dart_tool/
+build/
+.idea/
+relay/venv/

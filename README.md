@@ -12,7 +12,7 @@ your hardware, and the relay can be reached from anywhere over the internet via
 Cloudflare Tunnel, Tailscale, or a reverse proxy.
 
 <p align="center">
-  <img src="screenshots/1.jpg" width="140" alt=""><img src="screenshots/2.jpg" width="140" alt=""><img src="screenshots/3.jpg" width="140" alt="">
+  <img src="screenshots/1.jpg" width="140" style="margin: 0 8px;" alt=""><img src="screenshots/2.jpg" width="140" style="margin: 0 8px;" alt=""><img src="screenshots/3.jpg" width="140" style="margin: 0 8px;" alt="">
 </p>
 
 ## Features

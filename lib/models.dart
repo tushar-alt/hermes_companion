@@ -1,6 +1,9 @@
 /// Data models shared across the app (API DTOs + local queue types).
 library;
 
+import 'dart:convert';
+import 'dart:typed_data';
+
 class ChatInfo {
   ChatInfo({
     required this.id,
@@ -147,16 +150,30 @@ class QueuedMessage {
 }
 
 /// A locally-picked file waiting to be uploaded with a queued message.
+///
+/// On device builds the file lives at [localPath]; on the web there is no
+/// file system, so the picked bytes are kept in [bytes] instead.
 class Attachment {
-  const Attachment(this.localPath, this.name);
+  const Attachment(this.localPath, this.name, {this.bytes});
 
-  factory Attachment.fromJson(Map<String, dynamic> json) => Attachment(
-        json['localPath'] as String? ?? '',
-        json['name'] as String? ?? '',
-      );
+  factory Attachment.fromJson(Map<String, dynamic> json) {
+    final b64 = json['bytes'] as String?;
+    return Attachment(
+      json['localPath'] as String? ?? '',
+      json['name'] as String? ?? '',
+      bytes: (b64 == null || b64.isEmpty) ? null : base64Decode(b64),
+    );
+  }
 
   final String localPath;
   final String name;
 
-  Map<String, dynamic> toJson() => {'localPath': localPath, 'name': name};
+  /// Raw file bytes (web builds, where there is no local file system).
+  final Uint8List? bytes;
+
+  Map<String, dynamic> toJson() => {
+        'localPath': localPath,
+        'name': name,
+        if (bytes != null) 'bytes': base64Encode(bytes!),
+      };
 }

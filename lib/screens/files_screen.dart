@@ -1,12 +1,10 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../api.dart';
+import '../download_actions_io.dart'
+    if (dart.library.html) '../download_actions_web.dart' as download_actions;
 import '../models.dart';
 import '../theme.dart';
-import '../widgets/download_dialog.dart';
 
 class FilesScreen extends StatefulWidget {
   const FilesScreen({super.key, required this.api});
@@ -53,22 +51,14 @@ class _FilesScreenState extends State<FilesScreen> {
   Future<void> _download(FileEntry f) async {
     setState(() => _downloading = f.name);
     try {
-      final file = await showDialog<File>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => DownloadProgressDialog(
-          fileName: f.name,
-          baseUrl: widget.api.baseUrl,
-          token: widget.api.token,
-          path: f.path,
-        ),
+      await download_actions.downloadAndHandle(
+        context,
+        baseUrl: widget.api.baseUrl,
+        token: widget.api.token,
+        path: f.path,
+        name: f.name,
+        mimeType: _mimeFor(f.name),
       );
-      if (file == null || !mounted) return;
-      await SharePlus.instance.share(ShareParams(
-        files: [XFile(file.path, mimeType: _mimeFor(f.name))],
-        title: f.name,
-        subject: f.name,
-      ));
     } finally {
       if (mounted) setState(() => _downloading = null);
     }

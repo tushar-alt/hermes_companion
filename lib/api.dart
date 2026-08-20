@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
@@ -212,23 +211,25 @@ class RelayApi {
 
 /// Whether [url] points at a private/LAN address (or localhost). Used to warn
 /// the user about plain `http://` when the relay is exposed to the internet.
+/// Works on every platform (no dart:io, so it also compiles for the web).
 bool isLanHost(String url) {
   try {
     final host = Uri.parse(url).host;
     if (host.isEmpty || host == 'localhost') return true;
-    final addr = InternetAddress.tryParse(host);
-    if (addr == null) return false; // a hostname → assume it is public
-    if (addr.isLoopback || addr.isLinkLocal) return true;
-    // RFC 1918 private ranges: 10/8, 172.16/12, 192.168/16.
-    final o = addr.rawAddress;
-    final n = o.length;
-    if (n == 4 || n == 16) {
-      final a = o[n - 4];
-      final b = o[n - 3];
-      if (a == 10) return true;
-      if (a == 172 && b >= 16 && b <= 31) return true;
-      if (a == 192 && b == 168) return true;
-    }
+    // IPv6 loopback / link-local literals.
+    if (host == '::1' || host.startsWith('fe80:')) return true;
+    // IPv4 literals: private ranges 10/8, 172.16/12, 192.168/16, loopback
+    // 127/8 and link-local 169.254/16.
+    final m = RegExp(r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$')
+        .firstMatch(host);
+    if (m == null) return false; // a hostname → assume it is public
+    final a = int.parse(m.group(1)!);
+    final b = int.parse(m.group(2)!);
+    if (a == 10) return true;
+    if (a == 127) return true;
+    if (a == 172 && b >= 16 && b <= 31) return true;
+    if (a == 192 && b == 168) return true;
+    if (a == 169 && b == 254) return true;
     return false;
   } catch (_) {
     return false;
@@ -237,7 +238,7 @@ bool isLanHost(String url) {
 
 /// Cleans a relay base URL that got mangled in transit (chat apps love to
 /// wrap or space out links, and a stray space in the host shows up as `%20`
-/// and makes dart:io throw "not a valid link-local address").
+/// and breaks URL parsing).
 ///
 /// - strips all whitespace (spaces/newlines/tabs anywhere in the URL)
 /// - removes `%20`/spaces inside the host portion
@@ -258,10 +259,9 @@ String describeConnectionError(Object error) {
   if (error is TimeoutException) {
     return 'Timed out — no response from that address';
   }
-  if (error is SocketException) {
-    return 'Can\'t reach that address — wrong IP/port, or the relay is down';
-  }
   if (error is http.ClientException) {
+    // On the web, connection failures surface as ClientException
+    // ("Failed to fetch", "Connection refused", ...).
     return 'Network error: ${error.message}';
   }
   final msg = error.toString();
@@ -272,4 +272,46 @@ String describeConnectionError(Object error) {
     return 'TLS problem — use https:// with a valid certificate';
   }
   return 'Connection failed — $msg';
+}
+
+/// Connection settings parsed from the pairing link an agent generates.
+class PairConfig {
+  const PairConfig(this.url, this.token);
+
+  final String url;
+  final String token;
+}
+
+/// Accepts several forgiving input shapes:
+///   `hermes://pair?url=<urlencoded>&token=<token>`  (agent-generated)
+///   `http://192.168.0.56:8124`                      (bare relay URL)
+///   `http://...|token`                              (URL|token)
+///
+/// Whitespace is stripped everywhere and the URL is normalized, because chat
+/// apps wrap/space links and a stray space in the host breaks URL parsing.
+PairConfig? parsePairLink(String input) {
+  final s = input.replaceAll(RegExp(r'\s+'), '').trim();
+  if (s.isEmpty) return null;
+  final uri = Uri.tryParse(s);
+  if (uri != null && uri.scheme == 'hermes') {
+    final url = normalizeBaseUrl(uri.queryParameters['url']?.trim() ?? '');
+    final token = uri.queryParameters['token']?.trim() ?? '';
+    if (url.isEmpty) return null;
+    return PairConfig(url, token);
+  }
+  // `url|token` — checked before the bare-URL branch so a pasted
+  // "http://host:port|token" splits correctly.
+  if (s.contains('|')) {
+    final parts = s.split('|');
+    final url = normalizeBaseUrl(parts.first.trim());
+    final token = parts.sublist(1).join('|').trim();
+    if (url.isNotEmpty &&
+        (url.startsWith('http://') || url.startsWith('https://'))) {
+      return PairConfig(url, token);
+    }
+  }
+  if (s.startsWith('http://') || s.startsWith('https://')) {
+    return PairConfig(normalizeBaseUrl(s), '');
+  }
+  return null;
 }

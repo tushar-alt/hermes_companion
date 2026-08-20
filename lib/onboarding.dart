@@ -9,48 +9,6 @@ import 'storage.dart';
 import 'theme.dart';
 import 'widgets/help_drawer.dart';
 
-/// Connection settings parsed from the pairing link an agent generates.
-class PairConfig {
-  const PairConfig(this.url, this.token);
-
-  final String url;
-  final String token;
-}
-
-/// Accepts several forgiving input shapes:
-///   `hermes://pair?url=<urlencoded>&token=<token>`  (agent-generated)
-///   `http://192.168.0.56:8124`                      (bare relay URL)
-///   `http://...|token`                              (URL|token)
-///
-/// Whitespace is stripped everywhere and the URL is normalized, because chat
-/// apps wrap/space links and a stray space in the host breaks dart:io.
-PairConfig? parsePairLink(String input) {
-  final s = input.replaceAll(RegExp(r'\s+'), '').trim();
-  if (s.isEmpty) return null;
-  final uri = Uri.tryParse(s);
-  if (uri != null && uri.scheme == 'hermes') {
-    final url = normalizeBaseUrl(uri.queryParameters['url']?.trim() ?? '');
-    final token = uri.queryParameters['token']?.trim() ?? '';
-    if (url.isEmpty) return null;
-    return PairConfig(url, token);
-  }
-  // `url|token` — checked before the bare-URL branch so a pasted
-  // "http://host:port|token" splits correctly.
-  if (s.contains('|')) {
-    final parts = s.split('|');
-    final url = normalizeBaseUrl(parts.first.trim());
-    final token = parts.sublist(1).join('|').trim();
-    if (url.isNotEmpty &&
-        (url.startsWith('http://') || url.startsWith('https://'))) {
-      return PairConfig(url, token);
-    }
-  }
-  if (s.startsWith('http://') || s.startsWith('https://')) {
-    return PairConfig(normalizeBaseUrl(s), '');
-  }
-  return null;
-}
-
 /// First-run welcome + connect screen. Shown only until the user has paired.
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -62,26 +20,29 @@ class OnboardingScreen extends StatefulWidget {
 class _OnboardingScreenState extends State<OnboardingScreen> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _linkController = TextEditingController();
-  final _urlController = TextEditingController();
-  final _tokenController = TextEditingController();
   bool _testing = false;
-  bool _testedOk = false;
   String? _lastError;
+  bool _warnPublicHttp = false;
 
   @override
   void initState() {
     super.initState();
-    // Keep the public-http warning live while the user types a URL.
-    _urlController.addListener(() {
-      if (mounted) setState(() {});
+    // Keep the public-http warning live while the user types/pastes a link.
+    _linkController.addListener(() {
+      if (!mounted) return;
+      setState(() {
+        final cfg = parsePairLink(_linkController.text.trim());
+        _warnPublicHttp = cfg != null &&
+            cfg.url.startsWith('http://') &&
+            !isLanHost(cfg.url);
+        _lastError = null;
+      });
     });
   }
 
   @override
   void dispose() {
     _linkController.dispose();
-    _urlController.dispose();
-    _tokenController.dispose();
     super.dispose();
   }
 
@@ -92,56 +53,40 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         content: Text('Master prompt copied — send it to your agent')));
   }
 
+  /// Parse the pasted pairing link, test the connection, and on success save
+  /// the credentials and enter the app — all in one action.
   Future<void> _useLink() async {
     final cfg = parsePairLink(_linkController.text);
     if (cfg == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('That doesn\'t look like a pairing link')));
-      return;
-    }
-    _urlController.text = cfg.url;
-    _tokenController.text = cfg.token;
-    await _test();
-  }
-
-  Future<void> _test() async {
-    final raw = _urlController.text.trim();
-    final url = normalizeBaseUrl(raw);
-    if (url != raw) _urlController.text = url; // show the cleaned URL
-    if (url.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Enter a server URL')));
+      setState(() => _lastError =
+          'That doesn\'t look like a pairing link — paste the full hermes://pair?url=…&token=… line.');
       return;
     }
     setState(() {
       _testing = true;
-      _testedOk = false;
+      _lastError = null;
     });
-    final api = RelayApi(url, token: _tokenController.text.trim());
+    final api = RelayApi(cfg.url, token: cfg.token);
     var ok = false;
     var error = '';
     try {
       await api.fetchChats();
       ok = true;
     } catch (e) {
-      ok = false;
       error = describeConnectionError(e);
     }
     if (!mounted) return;
-    setState(() {
-      _testing = false;
-      _testedOk = ok;
-      _lastError = ok ? null : error;
-    });
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(ok ? '✅ Connected to your machine' : '❌ $error')));
-  }
-
-  Future<void> _finish() async {
+    if (!ok) {
+      setState(() {
+        _testing = false;
+        _lastError = error;
+      });
+      return;
+    }
+    // Connected — save and enter the app.
     final messenger = ScaffoldMessenger.of(context);
     final prefs = await AppPrefs.load();
-    await prefs.setCredentials(normalizeBaseUrl(_urlController.text.trim()),
-        _tokenController.text.trim());
+    await prefs.setCredentials(cfg.url, cfg.token);
     await prefs.markOnboarded();
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
@@ -150,7 +95,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     // hand it to Hermes and finish the setup (relay, public URL, sessions).
     await Clipboard.setData(ClipboardData(text: agentPairingPrompt()));
     messenger.showSnackBar(const SnackBar(
-        content: Text('Master prompt copied — send it to Hermes to finish setup')));
+        content: Text(
+            '✅ Connected — master prompt copied, send it to Hermes to finish setup')));
   }
 
   Future<void> _skip() async {
@@ -289,40 +235,39 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         onPressed: _testing ? null : _useLink,
                         style:
                             FilledButton.styleFrom(backgroundColor: gold),
-                        icon: const Icon(Icons.link_rounded, size: 16),
-                        label: const Text('Use link',
-                            style: TextStyle(color: bg, fontSize: 13)),
+                        icon: _testing
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                    color: bg, strokeWidth: 2))
+                            : const Icon(Icons.link_rounded, size: 16),
+                        label: Text(_testing ? 'Connecting…' : 'Connect',
+                            style: const TextStyle(
+                                color: bg,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700)),
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 18),
-              Center(
-                child: Text('— or enter the details manually —',
-                    style: TextStyle(color: sand.withValues(alpha: 0.7), fontSize: 11.5)),
-              ),
               const SizedBox(height: 14),
-              const Text('Server URL',
-                  style: TextStyle(color: sand, fontSize: 12)),
-              const SizedBox(height: 6),
-              TextField(
-                controller: _urlController,
-                style: const TextStyle(color: cream),
-                decoration: const InputDecoration(
-                  hintText: 'http://192.168.0.56:8124',
-                  hintStyle: TextStyle(color: sand),
-                  enabledBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: Color(0x33C9A24B))),
-                  focusedBorder:
-                      UnderlineInputBorder(borderSide: BorderSide(color: gold)),
+              if (_lastError != null)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: red.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: red.withValues(alpha: 0.4)),
+                  ),
+                  child: Text('❌ $_lastError',
+                      style: const TextStyle(color: red, fontSize: 12)),
                 ),
-              ),
-              if (_urlController.text.trim().isNotEmpty &&
-                  _urlController.text.trim().startsWith('http://') &&
-                  !isLanHost(_urlController.text.trim()))
+              if (_warnPublicHttp)
                 Padding(
-                  padding: const EdgeInsets.only(top: 6),
+                  padding: const EdgeInsets.only(top: 8),
                   child: Row(
                     children: [
                       const Icon(Icons.public_rounded, size: 13, color: gold),
@@ -338,57 +283,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     ],
                   ),
                 ),
-              const SizedBox(height: 12),
-              const Text('Access token (optional)',
-                  style: TextStyle(color: sand, fontSize: 12)),
-              const SizedBox(height: 6),
-              TextField(
-                controller: _tokenController,
-                obscureText: true,
-                style: const TextStyle(color: cream),
-                decoration: const InputDecoration(
-                  enabledBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: Color(0x33C9A24B))),
-                  focusedBorder:
-                      UnderlineInputBorder(borderSide: BorderSide(color: gold)),
-                ),
-              ),
               const SizedBox(height: 22),
-              Row(
-                children: [
-                  OutlinedButton(
-                    onPressed: _testing ? null : _test,
-                    child: _testing
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                                color: gold, strokeWidth: 2))
-                        : const Text('Test connection',
-                            style: TextStyle(color: gold)),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton(
-                      style: FilledButton.styleFrom(
-                          backgroundColor: _testedOk ? gold : ink2),
-                      onPressed: _testedOk ? _finish : null,
-                      child: const Text('Connect',
-                          style: TextStyle(
-                              color: bg,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700)),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              if (_lastError != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text('❌ $_lastError',
-                      style: const TextStyle(color: red, fontSize: 12)),
-                ),
               Center(
                 child: TextButton(
                   onPressed: _skip,

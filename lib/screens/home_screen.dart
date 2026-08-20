@@ -241,135 +241,32 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _openSettings() async {
-    final urlController = TextEditingController(text: _serverUrl);
-    final tokenController = TextEditingController(text: _token);
-    final warnPublicHttp =
-        _serverUrl.trim().startsWith('http://') && !isLanHost(_serverUrl.trim());
     final messenger = ScaffoldMessenger.of(context);
     await showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Settings',
-                  style: GoogleFonts.fraunces(
-                      fontSize: 22, fontWeight: FontWeight.w600, color: cream)),
-              const SizedBox(height: 18),
-              const Text('Server URL',
-                  style: TextStyle(color: sand, fontSize: 12)),
-              TextField(
-                controller: urlController,
-                style: const TextStyle(color: cream),
-                decoration: const InputDecoration(
-                  hintText: 'http://192.168.0.56:8124',
-                  hintStyle: TextStyle(color: sand),
-                  enabledBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: Color(0x33C9A24B))),
-                  focusedBorder:
-                      UnderlineInputBorder(borderSide: BorderSide(color: gold)),
-                ),
-              ),
-              if (warnPublicHttp)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.public_rounded, size: 13, color: gold),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          'Public address over plain http — use https:// when '
-                          'connecting from the internet.',
-                          style: TextStyle(
-                              color: gold, fontSize: 11, height: 1.35),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              const SizedBox(height: 14),
-              const Text('Access token',
-                  style: TextStyle(color: sand, fontSize: 12)),
-              TextField(
-                controller: tokenController,
-                obscureText: true,
-                style: const TextStyle(color: cream),
-                decoration: const InputDecoration(
-                  enabledBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: Color(0x33C9A24B))),
-                  focusedBorder:
-                      UnderlineInputBorder(borderSide: BorderSide(color: gold)),
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextButton.icon(
-                onPressed: () async {
-                  await Clipboard.setData(
-                      ClipboardData(text: agentPairingPrompt()));
-                  messenger.showSnackBar(const SnackBar(
-                      content:
-                          Text('Prompt copied — send it to your agent')));
-                },
-                icon: const Icon(Icons.copy_rounded, size: 15),
-                label: const Text('Copy master prompt',
-                    style: TextStyle(color: gold, fontSize: 12.5)),
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  OutlinedButton(
-                    onPressed: () async {
-                      final url = normalizeBaseUrl(urlController.text.trim());
-                      if (url != urlController.text.trim()) {
-                        urlController.text = url;
-                      }
-                      final api =
-                          RelayApi(url, token: tokenController.text.trim());
-                      try {
-                        await api.fetchChats();
-                        messenger.showSnackBar(
-                            const SnackBar(content: Text('✅ Connection OK')));
-                      } catch (e) {
-                        messenger.showSnackBar(SnackBar(
-                            content:
-                                Text('❌ ${describeConnectionError(e)}')));
-                      }
-                    },
-                    child: const Text('Test', style: TextStyle(color: gold)),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton(
-                      style: FilledButton.styleFrom(backgroundColor: gold),
-                      onPressed: () async {
-                        final url = normalizeBaseUrl(urlController.text.trim());
-                        if (url != urlController.text.trim()) {
-                          urlController.text = url;
-                        }
-                        await _prefs!.setCredentials(
-                            url, tokenController.text.trim());
-                        _serverUrl = url;
-                        _token = tokenController.text.trim();
-                        _api = RelayApi(_serverUrl, token: _token);
-                        if (!context.mounted) return;
-                        Navigator.pop(context);
-                        await _reload();
-                      },
-                      child:
-                          const Text('Save', style: TextStyle(color: bg)),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
+      builder: (_) => _SettingsSheet(
+        onConnect: (url, token) async {
+          final prefs = _prefs;
+          if (prefs == null) return false;
+          final api = RelayApi(url, token: token);
+          try {
+            await api.fetchChats();
+          } catch (e) {
+            messenger.showSnackBar(
+                SnackBar(content: Text('❌ ${describeConnectionError(e)}')));
+            return false;
+          }
+          await prefs.setCredentials(url, token);
+          _serverUrl = url;
+          _token = token;
+          _api = RelayApi(_serverUrl, token: _token);
+          await _reload();
+          messenger.showSnackBar(
+              const SnackBar(content: Text('✅ Connected to your machine')));
+          return true;
+        },
       ),
     );
   }
@@ -566,5 +463,170 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return;
     }
     await _reload();
+  }
+}
+
+/// Settings bottom sheet: a single pairing-link paste box. The app parses the
+/// full `hermes://pair?url=…&token=…` line itself — no manual URL/token entry.
+class _SettingsSheet extends StatefulWidget {
+  const _SettingsSheet({required this.onConnect});
+
+  /// Validates + saves the connection; returns true on success (the sheet
+  /// then closes itself).
+  final Future<bool> Function(String url, String token) onConnect;
+
+  @override
+  State<_SettingsSheet> createState() => _SettingsSheetState();
+}
+
+class _SettingsSheetState extends State<_SettingsSheet> {
+  final _linkController = TextEditingController();
+  bool _busy = false;
+  String? _error;
+  bool _warnPublicHttp = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _linkController.addListener(_onChanged);
+  }
+
+  @override
+  void dispose() {
+    _linkController.removeListener(_onChanged);
+    _linkController.dispose();
+    super.dispose();
+  }
+
+  void _onChanged() {
+    final cfg = parsePairLink(_linkController.text.trim());
+    setState(() {
+      _warnPublicHttp = cfg != null &&
+          cfg.url.startsWith('http://') &&
+          !isLanHost(cfg.url);
+      _error = null;
+    });
+  }
+
+  Future<void> _connect() async {
+    final cfg = parsePairLink(_linkController.text.trim());
+    if (cfg == null) {
+      setState(() => _error =
+          'That doesn\'t look like a pairing link — paste the full hermes://pair?url=…&token=… line.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final ok = await widget.onConnect(cfg.url, cfg.token);
+    if (!mounted) return;
+    if (ok) {
+      Navigator.of(context).pop();
+    } else {
+      setState(() {
+        _busy = false;
+        _error = 'Could not connect — check the link and try again.';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Settings',
+                style: GoogleFonts.fraunces(
+                    fontSize: 22, fontWeight: FontWeight.w600, color: cream)),
+            const SizedBox(height: 6),
+            const Text(
+              'Paste your pairing link here (hermes://pair?url=…&token=…) — '
+              'the app saves it and connects. Tunnel URLs change on every '
+              'restart, so ask Hermes for a fresh link if this one is old.',
+              style: TextStyle(color: sand, fontSize: 12, height: 1.45),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _linkController,
+              maxLines: 3,
+              minLines: 2,
+              style: const TextStyle(color: cream, fontSize: 13),
+              decoration: InputDecoration(
+                hintText: 'hermes://pair?url=…&token=…',
+                hintStyle: const TextStyle(color: sand, fontSize: 13),
+                filled: true,
+                fillColor: ink2,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+            ),
+            if (_warnPublicHttp)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Row(
+                  children: [
+                    const Icon(Icons.public_rounded, size: 13, color: gold),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Public address over plain http — use https:// when '
+                        'connecting from the internet.',
+                        style: TextStyle(
+                            color: gold, fontSize: 11, height: 1.35),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text('❌ $_error',
+                    style: const TextStyle(color: red, fontSize: 12)),
+              ),
+            const SizedBox(height: 10),
+            TextButton.icon(
+              onPressed: () async {
+                await Clipboard.setData(
+                    ClipboardData(text: agentPairingPrompt()));
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content:
+                        Text('Prompt copied — send it to your agent')));
+              },
+              icon: const Icon(Icons.copy_rounded, size: 15),
+              label: const Text('Copy master prompt',
+                  style: TextStyle(color: gold, fontSize: 12.5)),
+            ),
+            const SizedBox(height: 6),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(backgroundColor: gold),
+                onPressed: _busy ? null : _connect,
+                icon: _busy
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            color: bg, strokeWidth: 2))
+                    : const Icon(Icons.link_rounded, size: 16),
+                label: Text(_busy ? 'Connecting…' : 'Connect',
+                    style: const TextStyle(color: bg, fontSize: 14)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

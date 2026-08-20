@@ -4,7 +4,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hermes_companion/agent_prompt.dart';
 import 'package:hermes_companion/api.dart';
 import 'package:hermes_companion/models.dart';
-import 'package:hermes_companion/onboarding.dart';
 import 'package:hermes_companion/prompts.dart';
 import 'package:hermes_companion/screens/home_screen.dart';
 import 'package:hermes_companion/storage.dart';

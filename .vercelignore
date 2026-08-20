@@ -1,0 +1,7 @@
+# Only the Flutter web build output is deployed — keep everything else out
+# (the repo root contains Android build artifacts, caches, etc.).
+*
+!build/
+!build/web/
+!build/web/**
+!vercel.json

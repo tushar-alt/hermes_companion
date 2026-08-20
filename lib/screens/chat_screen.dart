@@ -1,13 +1,15 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../api.dart';
+import '../file_bytes_io.dart' if (dart.library.html) '../file_bytes_web.dart'
+    as fb;
 import '../models.dart';
-import '../notifications.dart';
+import '../notifications.dart'
+    if (dart.library.html) '../notifications_web.dart' as notifications;
 import '../storage.dart';
 import '../theme.dart';
 import '../widgets/cartoon_avatar.dart';
@@ -259,7 +261,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         final replies =
             page.messages.where((m) => !m.isUser && m.text.isNotEmpty);
         if (replies.isNotEmpty) {
-          await showHermesNotification(
+          await notifications.showHermesNotification(
               '${widget.chatName} 💬', _cleanPreview(replies.last.text));
         }
       }
@@ -314,10 +316,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Future<bool> _sendRaw(String text, List<Attachment> atts) async {
     List<String> serverMedia = [];
     // Attachments whose local file vanished (e.g. cache cleanup) are
-    // dropped instead of failing the whole send.
+    // dropped instead of failing the whole send. On the web the picked
+    // bytes live in memory, so they cannot "vanish".
     final liveAtts = <Attachment>[];
     for (final att in atts) {
-      if (await File(att.localPath).exists()) {
+      if (await fb.attachmentBytes(att) != null) {
         liveAtts.add(att);
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -326,7 +329,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
     try {
       for (final att in liveAtts) {
-        final bytes = await File(att.localPath).readAsBytes();
+        final bytes = await fb.attachmentBytes(att);
+        if (bytes == null) continue;
         final p = await _api.uploadFile(widget.chatId, att.name, bytes);
         serverMedia.add(p);
       }
@@ -410,10 +414,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final files = await FilePicker.pickFiles();
     if (files.isEmpty) return;
     final f = files.single;
-    if (f.path == null) return;
-    setState(() {
-      _attachments.add(Attachment(f.path!, f.name));
-    });
+    final localPath = f.path;
+    if (localPath != null) {
+      // Device build: keep the local file path, read it when sending.
+      setState(() {
+        _attachments.add(Attachment(localPath, f.name));
+      });
+    } else {
+      // Web build: the picker hands back a blob/data URI — read its bytes.
+      final bytes = await f.readAsBytes();
+      if (!mounted) return;
+      setState(() {
+        _attachments.add(Attachment('', f.name, bytes: bytes));
+      });
+    }
   }
 
   Future<void> _openInfoSheet() async {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'notifications.dart';
+import 'notifications.dart'
+    if (dart.library.html) 'notifications_web.dart' as notifications;
 import 'onboarding.dart';
 import 'screens/home_screen.dart';
 import 'storage.dart';
@@ -8,8 +9,8 @@ import 'theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await initNotifications();
-  await initForegroundService();
+  await notifications.initNotifications();
+  await notifications.initForegroundService();
   final prefs = await AppPrefs.load();
   runApp(CompanionApp(showOnboarding: !prefs.onboarded));
 }

@@ -44,8 +44,9 @@ Tailscale, or a TLS reverse proxy, so no open ports are required.
 
 1. Build and install the APK (see Build) or use a prebuilt release.
 2. On first launch the app shows a pairing screen.
-3. Paste a pairing link from your agent, or enter the server URL and token
-   manually, then test the connection.
+3. Paste the pairing link from your agent into the single input box and tap
+   Connect — the app parses the URL and token itself (Settings offers the
+   same single-box flow for re-pairing).
 4. The app lists your chats. The main chat is the admin and sync channel and is
    always pinned at the top.
 
@@ -69,6 +70,9 @@ If you are the agent receiving the master prompt, here is what to do:
 2. Run the relay (see the reference implementation in `relay/relay.py`) on port
    8124, bound to `0.0.0.0`, and make it reachable from the internet: Cloudflare
    Tunnel, Tailscale, or a VPS with TLS. A LAN-only URL works for local use.
+   Cloudflare quick-tunnel URLs change on EVERY restart and old URLs die
+   instantly — when replying, always use the LATEST live URL from the tunnel
+   log (verify it responds), never one from an earlier tunnel run.
 3. Reply with exactly one line, nothing else:
    `hermes://pair?url=<URL-ENCODED-BASE-URL>&token=<TOKEN>`, where `url` is the
    full base URL the phone can reach (URL-encoded, `https` preferred) and
@@ -141,6 +145,30 @@ The APK is written to `build/app/outputs/flutter-apk/app-release.apk`. Install
 it on the phone with `adb install -r ...`. The app requests notification
 permission on first launch; allow it to receive replies.
 
+## Web version
+
+The same Flutter client also builds for the browser and can be hosted as a
+static site (e.g. on Vercel):
+
+```bash
+flutter build web --release
+# deploy build/web/ as a static site, e.g.:
+vercel deploy build/web --prod
+```
+
+Notes for the web build:
+
+- Notifications and the foreground service are Android-only. The web build
+  polls while the tab is open (live replies) but has no background
+  notifications.
+- Files are downloaded through the browser instead of being opened on the
+  device, and picked attachments are held in memory.
+- The relay must answer browser CORS preflights. The reference relay
+  (`relay/relay.py`) enables `CORSMiddleware` for all origins; if you run your
+  own relay, add the same `Access-Control-Allow-*` headers.
+- Use an `https://` relay URL: a page served over https will not talk to a
+  plain `http://` relay (mixed content).
+
 ## Project layout
 
 ```
@@ -152,6 +180,7 @@ lib/
   storage.dart           AppPrefs — SharedPreferences wrapper (credentials,
                          watermarks, outbox, offline cache)
   notifications.dart     local notifications and the 20s background service
+  notifications_web.dart no-op notification stub for the web build
   markdown.dart          in-house markdown renderer for agent replies
   onboarding.dart        first-run pairing screen and pairing-link parser
   agent_prompt.dart      the master prompt handed to the agent
@@ -159,6 +188,12 @@ lib/
   screens/               home (chat list, sorting, session toggles), chat, files
   widgets/               chat tile, cartoon avatar, message bubble, typing
                          bubble, help drawer, status dot, download dialog
+  download_actions_*.dart platform-specific file download handling (device
+                         open/share sheet, browser download on web)
+  media_image_*.dart     authenticated image widget (Image.network on device,
+                         fetched bytes via Image.memory on web)
+  file_bytes_*.dart      attachment byte access (local file vs in-memory)
+web/                     Flutter web platform files (index.html, manifest.json)
 relay/
   relay.py               reference FastAPI relay
   requirements.txt       relay dependencies

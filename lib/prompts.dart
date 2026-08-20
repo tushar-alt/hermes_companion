@@ -27,11 +27,11 @@ hermes://pair?url=<URL-ENCODED-BASE-URL>&token=<TOKEN>
 
 Do ALL of the following:
 1. RELAY: run the reference FastAPI relay from the project README on port 8124 bound to 0.0.0.0. It implements /api/health, /api/chats, /api/chat, /api/chat/new, /api/chat/<id> (DELETE), /api/chat/<id>/pause, /api/chat/<id>/resume, /api/messages, /api/send, /api/status, /api/files, /api/media, /api/upload. Wire the agent hooks (run_agent, start_agent_session, stop_agent_session) to your real agent logic.
-2. PUBLIC: make the relay reachable from anywhere — Cloudflare Tunnel (cloudflared tunnel --url http://localhost:8124), Tailscale, or a VPS reverse proxy with TLS. Prefer a public https:// URL.
+2. PUBLIC: make the relay reachable from anywhere — Cloudflare Tunnel (cloudflared tunnel --url http://localhost:8124), Tailscale, or a VPS reverse proxy with TLS. Prefer a public https:// URL. Cloudflare quick-tunnel URLs change on EVERY restart and old URLs die instantly: when you build the pairing link, always use the LATEST live URL (for a quick tunnel, the most recent trycloudflare.com URL from the tunnel log — verify it responds before replying). NEVER reuse a URL from an earlier tunnel run.
 3. PAUSE/RESUME: POST /api/chat/<id>/pause must stop that chat's session/CLI (zero system resources); /resume must start it again. While paused, do not run the agent — keep messages queued.
 4. DELETE: DELETE /api/chat/<id> must kill the session, remove the chat and all its messages, and refuse deleting the main chat (400).
 5. TOKEN: generate a random bearer token (e.g. openssl rand -hex 24).
-6. Build the pairing link: url = the full base URL the phone can reach, URL-encoded (e.g. http%3A%2F%2F192.168.0.56%3A8124); token = the token from step 5, plain text.
+6. Build the pairing link: url = the CURRENT, LIVE base URL the phone can reach (checked/working right now), URL-encoded (e.g. http%3A%2F%2F192.168.0.56%3A8124); token = the token from step 5, plain text.
 
 No explanations, no markdown, no extra words. Just the single line starting with hermes://pair?
 ''');
@@ -50,7 +50,8 @@ No link yet? You can also enter the server URL + token manually and tap "Test co
 const anywhereSteps = PromptScript('Works from anywhere (for you)', '''
 How to use the app from anywhere (not just home Wi-Fi):
 1. The master prompt already tells Hermes to expose the relay publicly.
-2. Re-pair with the new public https:// URL it replies with.
+2. Ask Hermes for a FRESH pairing link every time (tunnel URLs change on each
+   restart and old ones die) — re-pair with the new public https:// URL it replies with.
 3. Keep the relay running. The app, chat, files and notifications then work over mobile data.
 ''');
 

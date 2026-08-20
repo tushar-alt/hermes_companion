@@ -12,6 +12,7 @@
 .swiftpm/
 migrate_working_dir/
 __pycache__/
+**/venv/
 
 # IntelliJ related
 *.iml
@@ -47,3 +48,5 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+.vercel
+.env*

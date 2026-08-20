@@ -1,14 +1,15 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../api.dart';
 import '../theme.dart';
 
-/// Stream-download a relay file to a temp dir, reporting byte progress.
-Future<File> streamDownload({
+/// Stream-download a relay file, reporting byte progress. Returns the raw
+/// bytes (platform-neutral: the caller decides what to do with them — save
+/// to a file on device, or trigger a browser download on the web).
+Future<Uint8List> streamDownload({
   required String baseUrl,
   required String token,
   required String path,
@@ -18,24 +19,18 @@ Future<File> streamDownload({
   final api = RelayApi(baseUrl, token: token);
   final res = await api.streamMedia(path);
   final total = res.contentLength ?? 0;
-  final dir = await getTemporaryDirectory();
-  final file = File('${dir.path}/$name');
-  final sink = file.openWrite();
+  final builder = BytesBuilder(copy: false);
   var received = 0;
-  try {
-    await for (final chunk in res.stream) {
-      sink.add(chunk);
-      received += chunk.length;
-      onProgress(received, total);
-    }
-  } finally {
-    await sink.close();
+  await for (final chunk in res.stream) {
+    builder.add(chunk);
+    received += chunk.length;
+    onProgress(received, total);
   }
-  return file;
+  return builder.takeBytes();
 }
 
-/// Modal download dialog with a real progress bar; pops with the [File] on
-/// success, or null on failure.
+/// Modal download dialog with a real progress bar; pops with the downloaded
+/// bytes on success, or null on failure.
 class DownloadProgressDialog extends StatefulWidget {
   const DownloadProgressDialog({
     super.key,
@@ -67,7 +62,7 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
 
   Future<void> _run() async {
     try {
-      final file = await streamDownload(
+      final bytes = await streamDownload(
         baseUrl: widget.baseUrl,
         token: widget.token,
         path: widget.path,
@@ -81,7 +76,7 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
           }
         },
       );
-      if (mounted) Navigator.of(context).pop(file);
+      if (mounted) Navigator.of(context).pop(bytes);
     } catch (_) {
       if (mounted) setState(() => _failed = true);
       await Future.delayed(const Duration(milliseconds: 900));

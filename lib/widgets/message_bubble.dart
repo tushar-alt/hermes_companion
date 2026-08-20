@@ -1,15 +1,13 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:open_filex/open_filex.dart';
-import 'package:share_plus/share_plus.dart';
 
+import '../download_actions_io.dart'
+    if (dart.library.html) '../download_actions_web.dart' as download_actions;
 import '../markdown.dart';
+import '../media_image_io.dart'
+    if (dart.library.html) '../media_image_web.dart' as media;
 import '../models.dart';
 import '../theme.dart';
 import 'cartoon_avatar.dart';
-import 'download_dialog.dart';
 
 class MessageBubble extends StatelessWidget {
   const MessageBubble({
@@ -211,8 +209,8 @@ class MediaView extends StatelessWidget {
             child: ConstrainedBox(
               constraints:
                   const BoxConstraints(maxWidth: 240, maxHeight: 240),
-              child: Image.network(
-                url,
+              child: media.MediaImage(
+                url: url,
                 headers: headers,
                 fit: BoxFit.contain,
                 loadingBuilder: (context, child, progress) {
@@ -305,84 +303,17 @@ class MediaView extends StatelessWidget {
     return Icons.insert_drive_file;
   }
 
-  /// Download a shared file (with progress), then offer Install/Open + Share.
+  /// Download a shared file (with progress), then offer Install/Open + Share
+  /// on device, or save it through the browser on the web.
   Future<void> _openFileActions(
       BuildContext context, String path, String name) async {
-    final navigator = Navigator.of(context);
-    final messenger = ScaffoldMessenger.of(context);
-    final file = await showDialog<File>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => DownloadProgressDialog(
-        fileName: name,
-        baseUrl: baseUrl,
-        token: token,
-        path: path,
-      ),
-    );
-    if (file == null) {
-      messenger.showSnackBar(const SnackBar(
-          content: Text('Download failed — relay unreachable?')));
-      return;
-    }
-    if (!context.mounted) return;
-    final isApk = name.toLowerCase().endsWith('.apk');
-    await showModalBottomSheet(
-      context: context,
-      backgroundColor: ink2,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 10),
-            Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: sand.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 14),
-            Text(name,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.manrope(
-                    color: cream, fontSize: 14, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 8),
-            ListTile(
-              leading: Icon(isApk ? Icons.android : Icons.open_in_new,
-                  color: gold),
-              title: Text(isApk ? 'Install' : 'Open',
-                  style: const TextStyle(color: cream, fontSize: 14)),
-              onTap: () async {
-                navigator.pop();
-                final res = await OpenFilex.open(file.path);
-                if (res.type != ResultType.done &&
-                    res.type != ResultType.noAppToOpen) {
-                  messenger.showSnackBar(
-                      SnackBar(content: Text('Could not open: ${res.message}')));
-                }
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.share, color: gold),
-              title: const Text('Share',
-                  style: TextStyle(color: cream, fontSize: 14)),
-              onTap: () async {
-                navigator.pop();
-                await SharePlus.instance.share(ShareParams(
-                  files: [XFile(file.path)],
-                  text: name,
-                ));
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
+    await download_actions.downloadAndHandle(
+      context,
+      baseUrl: baseUrl,
+      token: token,
+      path: path,
+      name: name,
+      fromMessage: true,
     );
   }
 }
@@ -408,8 +339,8 @@ class ImageViewerScreen extends StatelessWidget {
             child: InteractiveViewer(
               minScale: 1,
               maxScale: 6,
-              child: Image.network(
-                url,
+              child: media.MediaImage(
+                url: url,
                 headers: headers,
                 fit: BoxFit.contain,
                 loadingBuilder: (context, child, progress) => progress == null

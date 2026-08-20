@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "git config --global --add safe.directory '*' && curl -fsSL https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.47.1-stable.tar.xz | tar -xJ -C /vercel && /vercel/flutter/bin/flutter config --no-analytics && /vercel/flutter/bin/flutter pub get",
-  "buildCommand": "export PATH=/vercel/flutter/bin:$PATH && flutter build web --release",
+  "installCommand": "bash .deploy/install.sh",
+  "buildCommand": "bash .deploy/build.sh",
   "outputDirectory": "build/web"
 }

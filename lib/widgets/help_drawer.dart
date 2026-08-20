@@ -46,7 +46,7 @@ class HelpDrawer extends StatelessWidget {
                     child: Text('Hermes Companion',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.fraunces(
+                        style: GoogleFonts.geist(
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
                             color: cream)),

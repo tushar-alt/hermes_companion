@@ -29,6 +29,9 @@ List<ChatInfo> sortChats(
   return sorted;
 }
 
+/// Home shell per the design system: a responsive header (desktop top bar or
+/// mobile header), the chat list and Files/Health tabs, and a mobile bottom
+/// navigation (Chats / Files / Health).
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -39,7 +42,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   AppPrefs? _prefs;
-  late RelayApi _api;
+  RelayApi _api = RelayApi(defaultServerUrl);
   String _serverUrl = defaultServerUrl;
   String _token = '';
   bool _connected = false;
@@ -49,6 +52,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Timer? _timer;
   bool _booted = false;
   bool _appVisible = true;
+  int _tab = 0; // 0 chats, 1 files, 2 health
 
   @override
   void initState() {
@@ -123,26 +127,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     Navigator.of(context).push(
       PageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 260),
-        pageBuilder: (_, _, _) => ChatScreen(
-            chatId: chat.id, chatName: chat.name),
-        transitionsBuilder: (_, anim, _, child) => FadeTransition(
-          opacity: anim,
-          child: SlideTransition(
-            position:
-                Tween(begin: const Offset(0, 0.04), end: Offset.zero)
-                    .animate(anim),
-            child: child,
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _openFiles() {
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        transitionDuration: const Duration(milliseconds: 260),
-        pageBuilder: (_, _, _) => FilesScreen(api: _api),
+        pageBuilder: (_, _, _) =>
+            ChatScreen(chatId: chat.id, chatName: chat.name),
         transitionsBuilder: (_, anim, _, child) => FadeTransition(
           opacity: anim,
           child: SlideTransition(
@@ -170,7 +156,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             hintText: 'Chat name (e.g. Trip Planning)',
             hintStyle: TextStyle(color: sand),
             enabledBorder: UnderlineInputBorder(
-                borderSide: BorderSide(color: Color(0x33C9A24B))),
+                borderSide: BorderSide(color: borderColor)),
             focusedBorder:
                 UnderlineInputBorder(borderSide: BorderSide(color: gold)),
           ),
@@ -182,7 +168,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: gold),
             onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Create', style: TextStyle(color: bg)),
+            child: const Text('Create', style: TextStyle(color: onPrimary)),
           ),
         ],
       ),
@@ -214,9 +200,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               onPressed: () => Navigator.pop(context, false),
               child: const Text('Cancel', style: TextStyle(color: sand))),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: red),
+            style: FilledButton.styleFrom(backgroundColor: redDeep),
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+            child: const Text('Delete', style: TextStyle(color: onRed)),
           ),
         ],
       ),
@@ -248,10 +234,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // the paste box (isScrollControlled + viewInsets padding below).
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (context) => Padding(
-        padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom),
+        padding:
+            EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
         child: _SettingsSheet(
           onConnect: (url, token) async {
             final prefs = _prefs;
@@ -284,97 +270,179 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       key: _scaffoldKey,
       drawer: const HelpDrawer(),
       body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(),
-            Expanded(child: _buildList()),
-          ],
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final wide = constraints.maxWidth >= 768;
+            return Column(
+              children: [
+                if (wide) _buildDesktopHeader() else _buildMobileHeader(),
+                Expanded(
+                  child: IndexedStack(
+                    index: _tab,
+                    children: [
+                      _buildChatsTab(),
+                      FilesScreen(api: _api, embedded: true),
+                      FilesScreen(
+                          api: _api, embedded: true, initialTab: 'health'),
+                    ],
+                  ),
+                ),
+                if (!wide) _buildBottomNav(),
+              ],
+            );
+          },
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _createChat,
-        backgroundColor: gold,
-        elevation: 8,
-        child: const Icon(Icons.add_rounded, color: bg, size: 26),
       ),
     );
   }
 
-  Widget _buildHeader() {
+  // ── headers ────────────────────────────────────────────────────────────
+  Widget _buildDesktopHeader() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 18, 12, 12),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [bg, bg.withValues(alpha: 0.0)],
-        ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: const BoxDecoration(
+        color: surface,
+        border: Border(bottom: BorderSide(color: borderColor)),
       ),
       child: Row(
         children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: goldGradient,
-              boxShadow: [BoxShadow(color: Color(0x55C9A24B), blurRadius: 16)],
-            ),
-            child: const Center(
-              child: Text('⚕',
-                  style: TextStyle(
-                      color: bg, fontSize: 20, fontWeight: FontWeight.w800)),
-            ),
-          ),
-          const SizedBox(width: 12),
+          const Icon(Icons.hub_rounded, color: gold, size: 22),
+          const SizedBox(width: 10),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Hermes',
-                    style: GoogleFonts.fraunces(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w600,
-                        color: cream)),
-                Text(
-                  _everChecked == null
-                      ? 'connecting…'
-                      : _connected
-                          ? 'online'
-                          : 'offline — relay unreachable',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: _everChecked == null
-                        ? sand
-                        : _connected
-                            ? green
-                            : red,
-                  ),
-                ),
-              ],
-            ),
+            child: Text('Hermes Companion',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.geist(
+                    fontSize: 20, fontWeight: FontWeight.w600, color: cream)),
           ),
+          const SizedBox(width: 8),
+          _RelayBadge(connected: _connected, everChecked: _everChecked),
           IconButton(
             tooltip: 'Help & prompts',
             onPressed: () => _scaffoldKey.currentState?.openDrawer(),
-            icon: const Icon(Icons.info_outline_rounded, color: sand, size: 22),
-          ),
-          IconButton(
-            tooltip: 'Files',
-            onPressed: _openFiles,
-            icon: const Icon(Icons.folder_outlined, color: sand, size: 22),
+            icon: const Icon(Icons.info_outline_rounded, color: sand, size: 20),
           ),
           IconButton(
             tooltip: 'Settings',
             onPressed: _openSettings,
-            icon: const Icon(Icons.settings_outlined, color: sand, size: 22),
+            icon: const Icon(Icons.settings_outlined, color: sand, size: 20),
+          ),
+          const SizedBox(width: 2),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: gold,
+              foregroundColor: onPrimary,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: _createChat,
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text('New Chat',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildList() {
+  Widget _buildMobileHeader() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: const BoxDecoration(
+        color: surface,
+        border: Border(bottom: BorderSide(color: borderColor)),
+      ),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: Image.asset('assets/icon/icon.png',
+                width: 28, height: 28, fit: BoxFit.cover),
+          ),
+          const SizedBox(width: 8),
+          Text('Chats',
+              style: GoogleFonts.geist(
+                  fontSize: 20, fontWeight: FontWeight.w600, color: cream)),
+          const Spacer(),
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _connected ? green : red,
+            ),
+          ),
+          IconButton(
+            tooltip: 'Help & prompts',
+            onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+            icon: const Icon(Icons.info_outline_rounded, color: sand, size: 20),
+          ),
+          IconButton(
+            tooltip: 'Settings',
+            onPressed: _openSettings,
+            icon: const Icon(Icons.settings_outlined, color: sand, size: 20),
+          ),
+          IconButton(
+            tooltip: 'New chat',
+            onPressed: _createChat,
+            icon: const Icon(Icons.add_rounded, color: gold, size: 22),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── bottom nav (mobile) ────────────────────────────────────────────────
+  Widget _buildBottomNav() {
+    Widget item(int index, IconData icon, String label) {
+      final active = _tab == index;
+      return Expanded(
+        child: InkWell(
+          onTap: () => setState(() => _tab = index),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            decoration: BoxDecoration(
+              color: active ? green.withValues(alpha: 0.14) : Colors.transparent,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon,
+                    size: 22,
+                    color: active ? gold : sand),
+                const SizedBox(height: 3),
+                Text(label,
+                    style: TextStyle(
+                        fontFamily: monoFamily,
+                        fontSize: 11,
+                        color: active ? gold : sand)),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: const BoxDecoration(
+        color: surface,
+        border: Border(top: BorderSide(color: borderColor)),
+      ),
+      child: Row(
+        children: [
+          item(0, Icons.chat_bubble_rounded, 'Chats'),
+          item(1, Icons.folder_open_rounded, 'Files'),
+          item(2, Icons.monitor_heart_rounded, 'Health'),
+        ],
+      ),
+    );
+  }
+
+  // ── chats tab ──────────────────────────────────────────────────────────
+  Widget _buildChatsTab() {
     if (_everChecked == null) {
       return const Center(
           child: CircularProgressIndicator(color: gold, strokeWidth: 2));
@@ -410,7 +478,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       onRefresh: _reload,
       child: ListView.separated(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(14, 4, 14, 100),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
         itemCount: _chats.length,
         separatorBuilder: (_, _) => const SizedBox(height: 10),
         itemBuilder: (context, i) => _buildTile(_chats[i]),
@@ -445,10 +513,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 22),
         decoration: BoxDecoration(
-          color: red,
-          borderRadius: BorderRadius.circular(18),
+          color: redDeep,
+          borderRadius: BorderRadius.circular(12),
         ),
-        child: const Icon(Icons.delete_outline_rounded, color: Colors.white),
+        child: const Icon(Icons.delete_outline_rounded, color: onRed),
       ),
       confirmDismiss: (_) => _confirmDelete(chat),
       onDismissed: (_) => _deleteChat(chat),
@@ -470,6 +538,53 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return;
     }
     await _reload();
+  }
+}
+
+class _RelayBadge extends StatelessWidget {
+  const _RelayBadge({required this.connected, required this.everChecked});
+
+  final bool connected;
+  final bool? everChecked;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = everChecked == null
+        ? 'Connecting…'
+        : connected
+            ? 'Relay Online'
+            : 'Relay Offline';
+    final color = everChecked == null
+        ? outline
+        : connected
+            ? greenBright
+            : red;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: surfaceLow,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: borderColor),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+                shape: BoxShape.circle, color: connected ? green : red),
+          ),
+          const SizedBox(width: 6),
+          Text(label,
+              style: TextStyle(
+                  fontFamily: monoFamily,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: color)),
+        ],
+      ),
+    );
   }
 }
 
@@ -550,7 +665,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Settings',
-                style: GoogleFonts.fraunces(
+                style: GoogleFonts.geist(
                     fontSize: 22, fontWeight: FontWeight.w600, color: cream)),
             const SizedBox(height: 6),
             const Text(
@@ -564,18 +679,28 @@ class _SettingsSheetState extends State<_SettingsSheet> {
               controller: _linkController,
               maxLines: 3,
               minLines: 2,
-              style: const TextStyle(color: cream, fontSize: 13),
+              style: TextStyle(
+                  fontFamily: monoFamily, fontSize: 13, color: cream),
               decoration: InputDecoration(
                 hintText: 'hermes://pair?url=…&token=…',
-                hintStyle: const TextStyle(color: sand, fontSize: 13),
+                hintStyle: TextStyle(
+                    fontFamily: monoFamily, fontSize: 13, color: outline),
                 filled: true,
-                fillColor: ink2,
+                fillColor: bg,
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: borderColor),
                 ),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: borderColor),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: gold, width: 1.2),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 10),
               ),
             ),
             if (_warnPublicHttp)
@@ -620,17 +745,22 @@ class _SettingsSheetState extends State<_SettingsSheet> {
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
-                style: FilledButton.styleFrom(backgroundColor: gold),
+                style: FilledButton.styleFrom(
+                  backgroundColor: gold,
+                  foregroundColor: onPrimary,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
                 onPressed: _busy ? null : _connect,
                 icon: _busy
                     ? const SizedBox(
                         width: 16,
                         height: 16,
                         child: CircularProgressIndicator(
-                            color: bg, strokeWidth: 2))
+                            color: onPrimary, strokeWidth: 2))
                     : const Icon(Icons.link_rounded, size: 16),
                 label: Text(_busy ? 'Connecting…' : 'Connect',
-                    style: const TextStyle(color: bg, fontSize: 14)),
+                    style: const TextStyle(color: onPrimary, fontSize: 14)),
               ),
             ),
           ],

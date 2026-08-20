@@ -5,17 +5,19 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hermes_companion/main.dart';
 
 void main() {
-  testWidgets('first run shows onboarding', (tester) async {
+  testWidgets('first run shows pairing/onboarding', (tester) async {
     SharedPreferences.setMockInitialValues({});
     await tester.pumpWidget(const CompanionApp(showOnboarding: true));
-    expect(find.textContaining('Welcome to Hermes Companion'), findsOneWidget);
+    expect(find.text('Connect to Relay'), findsOneWidget);
+    expect(find.text('Hermes Companion'), findsOneWidget);
   });
 
-  testWidgets('onboarded app boots to chat list', (tester) async {
+  testWidgets('onboarded app boots to the chat shell', (tester) async {
     SharedPreferences.setMockInitialValues({'onboarded': true});
     await tester.pumpWidget(const CompanionApp());
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.byType(FloatingActionButton), findsOneWidget);
+    // Desktop header (test surface is wide) exposes the New Chat button.
+    expect(find.text('New Chat'), findsOneWidget);
     // Unmount so the home screen's poll timer is disposed.
     await tester.pumpWidget(const SizedBox());
   });

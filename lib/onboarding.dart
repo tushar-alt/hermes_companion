@@ -10,6 +10,11 @@ import 'theme.dart';
 import 'widgets/help_drawer.dart';
 
 /// First-run welcome + connect screen. Shown only until the user has paired.
+///
+/// Matches the "Pairing & Setup" design: centered logo + title, a single
+/// "Connect to Relay" card with one paste box (accepts the hermes://pair link,
+/// `url#token`, `url|token` or a bare URL) and a "First Time Setup?" card that
+/// copies the master prompt.
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
 
@@ -22,20 +27,27 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final _linkController = TextEditingController();
   bool _testing = false;
   String? _lastError;
-  bool _warnPublicHttp = false;
+  String _hint = 'Waiting for valid token…';
+  bool _hintOk = false;
 
   @override
   void initState() {
     super.initState();
-    // Keep the public-http warning live while the user types/pastes a link.
     _linkController.addListener(() {
       if (!mounted) return;
       setState(() {
-        final cfg = parsePairLink(_linkController.text.trim());
-        _warnPublicHttp = cfg != null &&
-            cfg.url.startsWith('http://') &&
-            !isLanHost(cfg.url);
         _lastError = null;
+        final cfg = parsePairLink(_linkController.text.trim());
+        if (_linkController.text.trim().isEmpty) {
+          _hint = 'Waiting for valid token…';
+          _hintOk = false;
+        } else if (cfg != null) {
+          _hint = 'Valid format detected. Ready to verify.';
+          _hintOk = true;
+        } else {
+          _hint = 'Invalid format. Expected: hermes://pair?url=…&token=…';
+          _hintOk = false;
+        }
       });
     });
   }
@@ -50,12 +62,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     await Clipboard.setData(ClipboardData(text: agentPairingPrompt()));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Master prompt copied — send it to your agent')));
+        content: Text('Bootstrap prompt copied — send it to your agent')));
   }
 
   /// Parse the pasted pairing link, test the connection, and on success save
   /// the credentials and enter the app — all in one action.
-  Future<void> _useLink() async {
+  Future<void> _connect() async {
     final cfg = parsePairLink(_linkController.text);
     if (cfg == null) {
       setState(() => _lastError =
@@ -115,197 +127,319 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       body: SafeArea(
         child: Stack(
           children: [
-            SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(24, 40, 24, 24),
-              child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 84,
-                  height: 84,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: goldGradient,
-                    boxShadow: [
-                      BoxShadow(color: Color(0x55C9A24B), blurRadius: 28),
-                    ],
-                  ),
-                  child: const Center(
-                    child: Text('⚕',
-                        style: TextStyle(
-                            color: bg,
-                            fontSize: 38,
-                            fontWeight: FontWeight.w800)),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 26),
-              Text('Welcome to Hermes Companion',
-                  style: GoogleFonts.fraunces(
-                      fontSize: 26,
-                      fontWeight: FontWeight.w600,
-                      color: cream)),
-              const SizedBox(height: 8),
-              const Text(
-                'A private chat with your Hermes agent, running on your own '
-                'machine. It answers, works while you sleep, and pings you '
-                'when it has news.',
-                style: TextStyle(color: sand, fontSize: 13.5, height: 1.5),
-              ),
-              const SizedBox(height: 26),
-              const Text('Pair with your agent',
-                  style: TextStyle(
-                      color: sand,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.6)),
-              const SizedBox(height: 8),
-              Container(
-                margin: const EdgeInsets.only(bottom: 10),
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: gold.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: gold.withValues(alpha: 0.4)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Don\'t have a link yet?',
-                        style: GoogleFonts.fraunces(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: cream)),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Copy this one master prompt and send it to Hermes — it '
-                      'sets up the whole relay (reachable from anywhere, with '
-                      'session power toggles), then replies with ONLY a '
-                      'pairing link, which you paste below.',
-                      style: TextStyle(color: sand, fontSize: 12, height: 1.4),
-                    ),
-                    const SizedBox(height: 10),
-                    OutlinedButton.icon(
-                      onPressed: _copyAgentPrompt,
-                      icon: const Icon(Icons.copy_rounded, size: 16),
-                      label: const Text('Copy master prompt'),
-                      style:
-                          OutlinedButton.styleFrom(foregroundColor: gold),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: surface,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0x33C9A24B)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Ask your agent for a pairing link (see the README — '
-                      'it knows how to make one). Paste it here:',
-                      style: TextStyle(color: cream, fontSize: 12.5, height: 1.45),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _linkController,
-                      style: const TextStyle(color: cream, fontSize: 13),
-                      decoration: InputDecoration(
-                        hintText: 'hermes://pair?url=…&token=…',
-                        hintStyle: const TextStyle(color: sand, fontSize: 13),
-                        filled: true,
-                        fillColor: ink2,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 10),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: FilledButton.icon(
-                        onPressed: _testing ? null : _useLink,
-                        style:
-                            FilledButton.styleFrom(backgroundColor: gold),
-                        icon: _testing
-                            ? const SizedBox(
-                                width: 14,
-                                height: 14,
-                                child: CircularProgressIndicator(
-                                    color: bg, strokeWidth: 2))
-                            : const Icon(Icons.link_rounded, size: 16),
-                        label: Text(_testing ? 'Connecting…' : 'Connect',
-                            style: const TextStyle(
-                                color: bg,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-              if (_lastError != null)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: red.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: red.withValues(alpha: 0.4)),
-                  ),
-                  child: Text('❌ $_lastError',
-                      style: const TextStyle(color: red, fontSize: 12)),
-                ),
-              if (_warnPublicHttp)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Row(
+            Center(
+              child: SingleChildScrollView(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 480),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Icon(Icons.public_rounded, size: 13, color: gold),
-                      const SizedBox(width: 6),
-                      Expanded(
+                      // Header: logo, title, self-hosted badge.
+                      Column(
+                        children: [
+                          Container(
+                            width: 96,
+                            height: 96,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: borderColor),
+                              color: surface,
+                              boxShadow: const [
+                                BoxShadow(
+                                    color: Color(0x0D58A6FF),
+                                    blurRadius: 20),
+                              ],
+                            ),
+                            padding: const EdgeInsets.all(16),
+                            child: Image.asset(
+                              'assets/icon/icon.png',
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          Text('Hermes Companion',
+                              style: GoogleFonts.geist(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.w600,
+                                  color: cream,
+                                  letterSpacing: -0.02)),
+                          const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 5),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(color: borderColor),
+                              color: surface,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: const BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: green,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text('Self-Hosted & Private',
+                                    style: GoogleFonts.jetBrainsMono(
+                                        fontSize: 11,
+                                        letterSpacing: 0.05,
+                                        fontWeight: FontWeight.w700,
+                                        color: sand)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Card 1: Connect to Relay.
+                      Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: borderColor),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Connect to Relay',
+                                style: GoogleFonts.geist(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w500,
+                                    color: cream)),
+                            const SizedBox(height: 16),
+                            Text('PAIRING LINK',
+                                style: GoogleFonts.jetBrainsMono(
+                                    fontSize: 11,
+                                    letterSpacing: 0.05,
+                                    color: sand)),
+                            const SizedBox(height: 6),
+                            TextField(
+                              controller: _linkController,
+                              maxLines: 2,
+                              minLines: 1,
+                              style: TextStyle(
+                                  fontFamily: monoFamily,
+                                  fontSize: 13,
+                                  color: cream),
+                              decoration: InputDecoration(
+                                hintText: 'hermes://pair?url=…&token=…',
+                                hintStyle: TextStyle(
+                                    fontFamily: monoFamily,
+                                    fontSize: 13,
+                                    color: outline),
+                                filled: true,
+                                fillColor: bg,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide:
+                                      const BorderSide(color: borderColor),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide:
+                                      const BorderSide(color: borderColor),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: const BorderSide(
+                                      color: gold, width: 1.2),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 12),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Icon(
+                                  _hintOk
+                                      ? Icons.wifi_tethering
+                                      : Icons.wifi_tethering,
+                                  size: 16,
+                                  color: _hintOk
+                                      ? greenBright
+                                      : _linkController.text.trim().isNotEmpty
+                                          ? red
+                                          : outline,
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(_hint,
+                                      style: TextStyle(
+                                          fontFamily: monoFamily,
+                                          fontSize: 11,
+                                          color: _hintOk
+                                              ? greenBright
+                                              : _linkController.text
+                                                      .trim()
+                                                      .isNotEmpty
+                                                  ? red
+                                                  : outline)),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: gold,
+                                  foregroundColor: onPrimary,
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 14),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8)),
+                                ),
+                                onPressed: _testing ? null : _connect,
+                                icon: _testing
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                            color: onPrimary, strokeWidth: 2))
+                                    : const Icon(Icons.arrow_forward_rounded,
+                                        size: 18),
+                                label: Text(
+                                    _testing ? 'Connecting…' : 'Verify & Connect',
+                                    style: GoogleFonts.inter(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w500)),
+                              ),
+                            ),
+                            if (_lastError != null) ...[
+                              const SizedBox(height: 12),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: redDeep.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                      color: red.withValues(alpha: 0.4)),
+                                ),
+                                child: Text('$_lastError',
+                                    style: const TextStyle(
+                                        color: onRed, fontSize: 12)),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Card 2: First time setup.
+                      Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: borderColor),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(Icons.terminal_rounded,
+                                    color: gold, size: 20),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text('First Time Setup?',
+                                          style: GoogleFonts.inter(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w500,
+                                              color: cream)),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Run the bootstrap script on your local '
+                                        'machine to initialize the agent and '
+                                        'generate a secure pairing link.',
+                                        style: const TextStyle(
+                                            color: sand,
+                                            fontSize: 13,
+                                            height: 1.45),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: _copyAgentPrompt,
+                                icon: const Icon(Icons.content_copy,
+                                    size: 18, color: sand),
+                                label: const Text('Copy Bootstrap Prompt',
+                                    style:
+                                        TextStyle(color: cream, fontSize: 14)),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: cream,
+                                  side: const BorderSide(color: borderColor),
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 12),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8)),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Footer.
+                      Center(
                         child: Text(
-                          'Public address over plain http — use https:// when '
-                          'connecting from the internet.',
+                          'Zero telemetry. Bearer tokens and history stay on your hardware.',
+                          textAlign: TextAlign.center,
                           style: TextStyle(
-                              color: gold, fontSize: 11, height: 1.35),
+                              fontFamily: monoFamily,
+                              fontSize: 11,
+                              color: outline.withValues(alpha: 0.7)),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Center(
+                        child: TextButton(
+                          onPressed: _skip,
+                          child: const Text('Skip for now',
+                              style: TextStyle(color: sand, fontSize: 12.5)),
                         ),
                       ),
                     ],
                   ),
                 ),
-              const SizedBox(height: 22),
-              Center(
-                child: TextButton(
-                  onPressed: _skip,
-                  child: const Text('Skip for now',
-                      style: TextStyle(color: sand, fontSize: 12.5)),
-                ),
               ),
-            ],
-          ),
+            ),
+            Positioned(
+              top: 4,
+              right: 4,
+              child: IconButton(
+                tooltip: 'Help & prompts',
+                onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+                icon: const Icon(Icons.info_outline_rounded,
+                    color: sand, size: 22),
+              ),
+            ),
+          ],
         ),
-        Positioned(
-          top: 4,
-          right: 4,
-          child: IconButton(
-            tooltip: 'Help & prompts',
-            onPressed: () => _scaffoldKey.currentState?.openDrawer(),
-            icon: const Icon(Icons.info_outline_rounded, color: sand, size: 22),
-          ),
-        ),
-      ],
-    ),
-  ),
-  );
+      ),
+    );
   }
 }

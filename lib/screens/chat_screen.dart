@@ -12,9 +12,10 @@ import '../notifications.dart'
     if (dart.library.html) '../notifications_web.dart' as notifications;
 import '../storage.dart';
 import '../theme.dart';
-import '../widgets/cartoon_avatar.dart';
+import '../widgets/icon_avatar.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/typing_bubble.dart';
+import 'files_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen(
@@ -464,10 +465,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   children: [
                     Row(
                       children: [
-                        CartoonAvatar(seed: widget.chatId, size: 38),
+                        IconAvatar(seed: widget.chatId, size: 38),
                         const SizedBox(width: 12),
                         Text(widget.chatName,
-                            style: GoogleFonts.fraunces(
+                            style: GoogleFonts.geist(
                                 fontSize: 19, fontWeight: FontWeight.w600)),
                       ],
                     ),
@@ -642,12 +643,96 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// Pause/resume this chat's agent session (the app-bar power action).
+  Future<void> _togglePause() async {
+    final paused = _status?.paused == true;
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = paused
+        ? await _api.resumeChat(widget.chatId)
+        : await _api.pauseChat(widget.chatId);
+    if (!mounted) return;
+    if (ok) {
+      await _refreshStatus();
+      messenger.showSnackBar(SnackBar(
+          content: Text(paused ? '✅ Session resumed' : '⏸ Session paused')));
+    } else {
+      messenger.showSnackBar(const SnackBar(
+          content: Text('Could not toggle — relay support missing?')));
+    }
+  }
+
+  /// Delete this chat everywhere (relay + local state), then leave.
+  Future<void> _deleteSession() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete chat?', style: TextStyle(fontSize: 17)),
+        content: Text(
+            '“${widget.chatName}” will be terminated everywhere: the agent '
+            'session stops, and the conversation and its files are removed.',
+            style: const TextStyle(color: cream, fontSize: 13)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel', style: TextStyle(color: sand))),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: redDeep),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete', style: TextStyle(color: onRed)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final ok = await _api.deleteChat(widget.chatId);
+    if (!mounted) return;
+    if (ok) {
+      final prefs = await AppPrefs.load();
+      await prefs.clearChat(widget.chatId);
+      if (!mounted) return;
+      Navigator.pop(context);
+      messenger.showSnackBar(
+          const SnackBar(content: Text('Chat deleted')));
+    } else {
+      messenger.showSnackBar(const SnackBar(
+          content: Text('Delete failed — relay unreachable?')));
+    }
+  }
+
+  void _openFiles() {
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => FilesScreen(api: _api)));
+  }
+
   Widget _buildAppBar() {
+    final isMain = widget.chatId == 'main';
+    final running = _status?.isRunning == true;
+    final paused = _status?.paused == true;
+    final statusLabel = _everChecked == null
+        ? 'Connecting…'
+        : !_connected
+            ? 'Offline — relay unreachable'
+            : paused
+                ? 'Paused'
+                : running
+                    ? 'Running (PID Active)'
+                    : 'Idle';
+    final statusColor = paused
+        ? red
+        : running
+            ? greenBright
+            : _everChecked == null
+                ? outline
+                : _connected
+                    ? sand
+                    : red;
     return Container(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-      decoration: BoxDecoration(
-        color: bg.withValues(alpha: 0.9),
-        border: const Border(bottom: BorderSide(color: Color(0x14F5EFE3))),
+      height: 64,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: const BoxDecoration(
+        color: surface,
+        border: Border(bottom: BorderSide(color: borderColor)),
       ),
       child: Row(
         children: [
@@ -656,44 +741,46 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             icon: const Icon(Icons.arrow_back_ios_new_rounded,
                 color: sand, size: 18),
           ),
-          const SizedBox(width: 2),
-          CartoonAvatar(seed: widget.chatId, size: 34),
+          IconAvatar(
+              seed: widget.chatId, size: 36, statusActive: !paused),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(widget.chatName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.fraunces(
-                        fontSize: 16.5, fontWeight: FontWeight.w600)),
-                Text(
-                  _everChecked == null
-                      ? 'connecting…'
-                      : !_connected
-                          ? 'offline — relay unreachable'
-                          : _status?.paused == true
-                              ? 'paused — agent is asleep'
-                              : _status?.isRunning == true
-                                  ? 'working… ${_status!.detail}'
-                                  : 'online · ${widget.chatId == 'main' ? 'WhatsApp sync' : 'separate session'}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: _status?.paused == true
-                        ? red
-                        : _status?.isRunning == true
-                            ? gold
-                            : _everChecked == null
-                                ? sand
-                                : _connected
-                                    ? green
-                                    : red,
-                  ),
-                ),
+                    style: GoogleFonts.geist(
+                        fontSize: 16, fontWeight: FontWeight.w600, color: cream)),
+                const SizedBox(height: 2),
+                Text(statusLabel,
+                    style: TextStyle(
+                        fontFamily: monoFamily,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: statusColor)),
               ],
             ),
           ),
+          IconButton(
+            tooltip: paused ? 'Resume session' : 'Pause session',
+            onPressed: _togglePause,
+            icon: Icon(paused ? Icons.play_circle_rounded : Icons.pause_circle_rounded,
+                color: paused ? red : gold, size: 22),
+          ),
+          IconButton(
+            tooltip: 'Files',
+            onPressed: _openFiles,
+            icon: const Icon(Icons.folder_shared_rounded, color: sand, size: 20),
+          ),
+          if (!isMain)
+            IconButton(
+              tooltip: 'Delete chat',
+              onPressed: _deleteSession,
+              icon: const Icon(Icons.delete_outline_rounded, color: red, size: 20),
+            ),
           IconButton(
             tooltip: 'Status',
             onPressed: _openInfoSheet,
@@ -827,69 +914,103 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Widget _buildInput() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(10, 8, 12, 10),
+      padding: const EdgeInsets.fromLTRB(10, 8, 12, 8),
       decoration: const BoxDecoration(
-        color: ink2,
-        border: Border(top: BorderSide(color: Color(0x14F5EFE3))),
+        color: surface,
+        border: Border(top: BorderSide(color: borderColor)),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          IconButton(
-            onPressed: _pickAttachment,
-            icon: const Icon(Icons.add_rounded, color: gold, size: 24),
-            tooltip: 'Attach file',
-          ),
-          Expanded(
-            child: Container(
-              constraints: const BoxConstraints(minHeight: 40, maxHeight: 120),
-              decoration: BoxDecoration(
-                color: surface,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0x22C9A24B)),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              IconButton(
+                onPressed: _pickAttachment,
+                icon: const Icon(Icons.add_rounded, color: gold, size: 24),
+                tooltip: 'Attach file',
               ),
-              child: TextField(
-                controller: _controller,
-                focusNode: _inputFocus,
-                minLines: 1,
-                maxLines: 4,
-                style: const TextStyle(color: cream, fontSize: 14),
-                decoration: InputDecoration(
-                  hintText: _pending ? 'sending…' : 'Message Hermes…',
-                  hintStyle: const TextStyle(color: sand, fontSize: 14),
-                  border: InputBorder.none,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  suffixIcon: _pending
-                      ? const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                                color: gold, strokeWidth: 2),
-                          ),
-                        )
-                      : null,
+              Expanded(
+                child: Container(
+                  constraints:
+                      const BoxConstraints(minHeight: 42, maxHeight: 120),
+                  decoration: BoxDecoration(
+                    color: ink2,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: borderColor),
+                  ),
+                  child: TextField(
+                    controller: _controller,
+                    focusNode: _inputFocus,
+                    minLines: 1,
+                    maxLines: 4,
+                    style: const TextStyle(color: cream, fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: _pending ? 'sending…' : 'Message Hermes…',
+                      hintStyle: const TextStyle(color: sand, fontSize: 14),
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      suffixIcon: _pending
+                          ? const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                    color: gold, strokeWidth: 2),
+                              ),
+                            )
+                          : null,
+                    ),
+                    onSubmitted: (_) => _send(),
+                    textInputAction: TextInputAction.send,
+                  ),
                 ),
-                onSubmitted: (_) => _send(),
-                textInputAction: TextInputAction.send,
               ),
-            ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: _send,
+                child: Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: goldGradient,
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x3358A6FF), blurRadius: 12),
+                    ],
+                  ),
+                  child: const Icon(Icons.send_rounded,
+                      color: onPrimary, size: 19),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: _send,
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: goldGradient,
-                boxShadow: [BoxShadow(color: Color(0x44C9A24B), blurRadius: 10)],
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _connected ? green : red,
+                ),
               ),
-              child: const Icon(Icons.arrow_upward_rounded, color: bg, size: 19),
-            ),
+              const SizedBox(width: 6),
+              Text(
+                _connected ? 'RELAY CONNECTED' : 'RELAY DISCONNECTED',
+                style: TextStyle(
+                    fontFamily: monoFamily,
+                    fontSize: 10,
+                    letterSpacing: 0.05,
+                    color: _connected ? sand : red),
+              ),
+            ],
           ),
         ],
       ),

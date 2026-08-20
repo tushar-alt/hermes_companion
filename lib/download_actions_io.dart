@@ -73,7 +73,7 @@ Future<void> downloadAndHandle(
             const SizedBox(height: 14),
             Text(name,
                 overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.manrope(
+                style: GoogleFonts.inter(
                     color: cream, fontSize: 14, fontWeight: FontWeight.w700)),
             const SizedBox(height: 8),
             ListTile(

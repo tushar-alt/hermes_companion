@@ -23,12 +23,12 @@ class MarkdownText extends StatelessWidget {
     return SelectionArea(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [for (final b in blocks) _buildBlock(b, base)],
+        children: [for (final b in blocks) _buildBlock(b, base, context)],
       ),
     );
   }
 
-  Widget _buildBlock(_MdBlock b, TextStyle base) {
+  Widget _buildBlock(_MdBlock b, TextStyle base, BuildContext context) {
     switch (b.type) {
       case _MdType.paragraph:
         return Padding(
@@ -49,27 +49,83 @@ class MarkdownText extends StatelessWidget {
           child: Text.rich(TextSpan(children: _inline(b.text, hs)), style: hs),
         );
       case _MdType.code:
-        final blockTint = (base.color ?? gold).withValues(alpha: 0.08);
         return Container(
           // No width:double.infinity — the block must shrink to its content
           // so the bubble is only as big as needed.
           margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: blockTint,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: accent.withValues(alpha: 0.25)),
+            color: bg,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: borderColor),
           ),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 260),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: SelectableText(
-                b.text,
-                style: base.copyWith(
-                    fontFamily: 'monospace', fontSize: 12.5, height: 1.4),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (b.lang.isNotEmpty || true)
+                Container(
+                  width: double.infinity,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: ink2,
+                    border:
+                        const Border(bottom: BorderSide(color: borderColor)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          b.lang.isEmpty ? 'code' : b.lang,
+                          style: TextStyle(
+                              fontFamily: monoFamily,
+                              fontSize: 11,
+                              color: sand),
+                        ),
+                      ),
+                      InkWell(
+                        onTap: () async {
+                          await Clipboard.setData(
+                              ClipboardData(text: b.text));
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text('Code copied')));
+                          }
+                        },
+                        child: const Row(
+                          children: [
+                            Icon(Icons.content_copy,
+                                size: 13, color: sand),
+                            SizedBox(width: 4),
+                            Text('Copy',
+                                style: TextStyle(
+                                    fontFamily: monoFamily,
+                                    fontSize: 11,
+                                    color: sand)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 260),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.all(12),
+                  child: SelectableText(
+                    b.text,
+                    style: base.copyWith(
+                        fontFamily: monoFamily,
+                        fontSize: 12.5,
+                        height: 1.7,
+                        color: goldHi),
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
         );
       case _MdType.quote:
@@ -308,6 +364,7 @@ class _MdBlock {
     this.items = const [],
     this.level = 0,
     this.ordered = false,
+    this.lang = '',
   });
 
   final _MdType type;
@@ -315,6 +372,9 @@ class _MdBlock {
   final List<String> items;
   final int level;
   final bool ordered;
+
+  /// Fenced code-block language (text after the opening ```).
+  final String lang;
 }
 
 List<_MdBlock> _parseBlocks(String src) {
@@ -329,13 +389,15 @@ List<_MdBlock> _parseBlocks(String src) {
     }
     if (trimmed.startsWith('```')) {
       final buf = <String>[];
+      final lang = trimmed.substring(3).trim();
       i++;
       while (i < lines.length && !lines[i].trimLeft().startsWith('```')) {
         buf.add(lines[i]);
         i++;
       }
       i++; // closing fence
-      blocks.add(_MdBlock(_MdType.code, text: buf.join('\n')));
+      blocks.add(_MdBlock(_MdType.code,
+          text: buf.join('\n'), lang: lang));
       continue;
     }
     final hm = RegExp(r'^(#{1,4})\s+(.*)$').firstMatch(trimmed);

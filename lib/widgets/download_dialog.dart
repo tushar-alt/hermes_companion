@@ -107,7 +107,7 @@ class _DownloadProgressDialogState extends State<DownloadProgressDialog> {
           children: [
             Text(widget.fileName,
                 overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.manrope(
+                style: GoogleFonts.inter(
                     color: cream, fontSize: 14, fontWeight: FontWeight.w700)),
             const SizedBox(height: 14),
             if (_failed) ...[

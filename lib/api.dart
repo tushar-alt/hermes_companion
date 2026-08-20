@@ -284,6 +284,7 @@ class PairConfig {
 
 /// Accepts several forgiving input shapes:
 ///   `hermes://pair?url=<urlencoded>&token=<token>`  (agent-generated)
+///   `https://relay.tld#bearer_token`                (URL#token)
 ///   `http://192.168.0.56:8124`                      (bare relay URL)
 ///   `http://...|token`                              (URL|token)
 ///
@@ -298,6 +299,13 @@ PairConfig? parsePairLink(String input) {
     final token = uri.queryParameters['token']?.trim() ?? '';
     if (url.isEmpty) return null;
     return PairConfig(url, token);
+  }
+  // `https://relay.tld#bearer_token` — the URL fragment holds the token.
+  if (uri != null &&
+      (uri.scheme == 'http' || uri.scheme == 'https') &&
+      uri.fragment.isNotEmpty) {
+    final url = normalizeBaseUrl(uri.replace(fragment: '').toString());
+    return PairConfig(url, uri.fragment);
   }
   // `url|token` — checked before the bare-URL branch so a pasted
   // "http://host:port|token" splits correctly.

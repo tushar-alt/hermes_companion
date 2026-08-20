@@ -7,7 +7,7 @@ import '../media_image_io.dart'
     if (dart.library.html) '../media_image_web.dart' as media;
 import '../models.dart';
 import '../theme.dart';
-import 'cartoon_avatar.dart';
+import 'icon_avatar.dart';
 
 class MessageBubble extends StatelessWidget {
   const MessageBubble({
@@ -24,7 +24,7 @@ class MessageBubble extends StatelessWidget {
   final String baseUrl;
   final String token;
 
-  /// Seed for the assistant's cartoon avatar (chat id).
+  /// Seed for the assistant's avatar (chat id).
   final String seed;
 
   /// True when this is a user message whose send failed (kept visible).
@@ -36,128 +36,123 @@ class MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isUser = message.isUser;
-    final radius = Radius.circular(isUser ? 18 : 16);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (!isUser) ...[
-            Container(
-              width: 28,
-              height: 28,
-              margin: const EdgeInsets.only(top: 2, right: 8),
-              child: CartoonAvatar(seed: seed, size: 28),
-            ),
+            IconAvatar(seed: seed, size: 28, icon: Icons.smart_toy_rounded),
+            const SizedBox(width: 10),
           ],
           Flexible(
             child: Container(
-              constraints: const BoxConstraints(maxWidth: 300),
-              padding: const EdgeInsets.fromLTRB(13, 9, 13, 7),
+              constraints: const BoxConstraints(maxWidth: 320),
               decoration: BoxDecoration(
-                gradient: isUser ? goldGradient : null,
-                color: isUser ? null : surface,
+                color: isUser ? ink2 : surface,
                 borderRadius: BorderRadius.only(
-                  topLeft: radius,
-                  topRight: radius,
-                  bottomLeft: isUser ? radius : const Radius.circular(4),
-                  bottomRight: isUser ? const Radius.circular(4) : radius,
+                  topLeft: isUser ? const Radius.circular(8) : Radius.zero,
+                  topRight: isUser ? Radius.zero : const Radius.circular(8),
+                  bottomLeft: const Radius.circular(8),
+                  bottomRight: const Radius.circular(8),
                 ),
-                border: isUser
-                    ? null
-                    : Border.all(color: const Color(0x2EC9A24B)),
-                boxShadow: isUser
-                    ? const [BoxShadow(color: Color(0x33C9A24B), blurRadius: 12)]
-                    : const [
-                        BoxShadow(
-                            color: Color(0x22000000),
-                            blurRadius: 8,
-                            offset: Offset(0, 3)),
-                      ],
+                border: Border.all(color: borderColor),
               ),
-              // IntrinsicWidth: the bubble must be only as wide as its
-              // content. Without it the timestamp's Align expands to fill all
-              // available width and stretches the bubble full-screen.
               child: IntrinsicWidth(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (message.media.isNotEmpty) ...[
-                      for (final path in message.media)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: MediaView(
-                              path: path,
-                              baseUrl: baseUrl,
-                              token: token,
-                              isUser: isUser),
-                        ),
-                    ],
-                  if (message.text.isNotEmpty)
-                    isUser
-                        ? Text(
-                            message.text,
-                            style: const TextStyle(
-                              color: bg,
-                              fontSize: 14,
-                              height: 1.4,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          )
-                        : MarkdownText(
-                            message.text,
-                            style: const TextStyle(
-                              color: cream,
-                              fontSize: 14,
-                              height: 1.4,
-                              fontWeight: FontWeight.w400,
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(13, 10, 13, 6),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (message.media.isNotEmpty) ...[
+                            for (final path in message.media)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 6),
+                                child: MediaView(
+                                    path: path,
+                                    baseUrl: baseUrl,
+                                    token: token,
+                                    isUser: isUser),
+                              ),
+                          ],
+                          if (message.text.isNotEmpty)
+                            isUser
+                                ? Text(
+                                    message.text,
+                                    style: const TextStyle(
+                                      color: cream,
+                                      fontSize: 14,
+                                      height: 1.45,
+                                    ),
+                                  )
+                                : MarkdownText(
+                                    message.text,
+                                    style: const TextStyle(
+                                      color: cream,
+                                      fontSize: 14,
+                                      height: 1.5,
+                                    ),
+                                  ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(13, 0, 10, 7),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Text(
+                            _time(message.ts),
+                            style: TextStyle(
+                              fontFamily: monoFamily,
+                              fontSize: 10,
+                              color: outline,
                             ),
                           ),
-                  const SizedBox(height: 2),
-                  Align(
-                    alignment: Alignment.bottomRight,
-                    child: Text(
-                      _time(message.ts),
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: isUser
-                            ? bg.withValues(alpha: 0.6)
-                            : const Color(0x99C9A24B),
-                      ),
-                    ),
-                  ),
-                  if (failed)
-                    GestureDetector(
-                      onTap: onRetry,
-                      child: Container(
-                        margin: const EdgeInsets.only(top: 4),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: bg.withValues(alpha: 0.18),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.error_outline_rounded,
-                                size: 12, color: red),
-                            SizedBox(width: 4),
-                            Text('Not sent — tap to retry',
-                                style: TextStyle(
-                                    color: red,
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.w700)),
+                          if (isUser) ...[
+                            const SizedBox(width: 4),
+                            const Icon(Icons.done_all_rounded,
+                                size: 13, color: sand),
                           ],
-                        ),
+                        ],
                       ),
                     ),
-                ],
+                    if (failed)
+                      GestureDetector(
+                        onTap: onRetry,
+                        child: Container(
+                          margin: const EdgeInsets.fromLTRB(13, 0, 13, 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: redDeep.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.error_outline_rounded,
+                                  size: 12, color: red),
+                              SizedBox(width: 4),
+                              Text('Not sent — tap to retry',
+                                  style: TextStyle(
+                                      color: red,
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w700)),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
-          ),
           ),
         ],
       ),
@@ -205,7 +200,7 @@ class MediaView extends StatelessWidget {
         child: Hero(
           tag: 'media-$path',
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(8),
             child: ConstrainedBox(
               constraints:
                   const BoxConstraints(maxWidth: 240, maxHeight: 240),
@@ -229,7 +224,7 @@ class MediaView extends StatelessWidget {
                   height: 100,
                   decoration: BoxDecoration(
                     color: bg.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -256,28 +251,28 @@ class MediaView extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: (isUser ? bg : ink2).withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: gold.withValues(alpha: 0.35)),
+          color: (isUser ? bg : ink2).withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: borderColor),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(_fileIcon(name), size: 16, color: isUser ? bg : gold),
+            Icon(_fileIcon(name), size: 16, color: gold),
             const SizedBox(width: 6),
             Flexible(
               child: Text(
                 name,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
+                style: const TextStyle(
                     fontSize: 11.5,
-                    color: isUser ? bg : cream,
+                    color: cream,
                     fontWeight: FontWeight.w600),
               ),
             ),
             if (!isUser) ...[
               const SizedBox(width: 5),
-              const Icon(Icons.download, size: 13, color: sand),
+              const Icon(Icons.download_rounded, size: 13, color: sand),
             ],
           ],
         ),

@@ -244,29 +244,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final messenger = ScaffoldMessenger.of(context);
     await showModalBottomSheet(
       context: context,
+      // Let the sheet ride above the on-screen keyboard when the user taps
+      // the paste box (isScrollControlled + viewInsets padding below).
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (_) => _SettingsSheet(
-        onConnect: (url, token) async {
-          final prefs = _prefs;
-          if (prefs == null) return false;
-          final api = RelayApi(url, token: token);
-          try {
-            await api.fetchChats();
-          } catch (e) {
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: _SettingsSheet(
+          onConnect: (url, token) async {
+            final prefs = _prefs;
+            if (prefs == null) return false;
+            final api = RelayApi(url, token: token);
+            try {
+              await api.fetchChats();
+            } catch (e) {
+              messenger.showSnackBar(
+                  SnackBar(content: Text('❌ ${describeConnectionError(e)}')));
+              return false;
+            }
+            await prefs.setCredentials(url, token);
+            _serverUrl = url;
+            _token = token;
+            _api = RelayApi(_serverUrl, token: _token);
+            await _reload();
             messenger.showSnackBar(
-                SnackBar(content: Text('❌ ${describeConnectionError(e)}')));
-            return false;
-          }
-          await prefs.setCredentials(url, token);
-          _serverUrl = url;
-          _token = token;
-          _api = RelayApi(_serverUrl, token: _token);
-          await _reload();
-          messenger.showSnackBar(
-              const SnackBar(content: Text('✅ Connected to your machine')));
-          return true;
-        },
+                const SnackBar(content: Text('✅ Connected to your machine')));
+            return true;
+          },
+        ),
       ),
     );
   }
@@ -534,7 +541,9 @@ class _SettingsSheetState extends State<_SettingsSheet> {
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: Padding(
+      // Scrollable so the whole sheet stays reachable with the keyboard up
+      // (the sheet is pushed above the keyboard via viewInsets padding).
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           mainAxisSize: MainAxisSize.min,

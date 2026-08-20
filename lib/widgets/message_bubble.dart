@@ -195,6 +195,9 @@ class MediaView extends StatelessWidget {
             url: url,
             headers: headers,
             heroTag: 'media-$path',
+            path: path,
+            baseUrl: baseUrl,
+            token: token,
           ),
         )),
         child: Hero(
@@ -313,45 +316,114 @@ class MediaView extends StatelessWidget {
   }
 }
 
-/// Full-screen pinch-zoom image viewer.
+/// Full-screen pinch-zoom image viewer with a top-right action bar
+/// (Share / Download / Close).
 class ImageViewerScreen extends StatelessWidget {
-  const ImageViewerScreen(
-      {super.key, required this.url, required this.headers, required this.heroTag});
+  const ImageViewerScreen({
+    super.key,
+    required this.url,
+    required this.headers,
+    required this.heroTag,
+    required this.path,
+    required this.baseUrl,
+    required this.token,
+  });
 
   final String url;
   final Map<String, String> headers;
   final String heroTag;
 
+  /// Server-side media path (for download/share of the original file).
+  final String path;
+  final String baseUrl;
+  final String token;
+
+  Future<void> _download(BuildContext context, {required bool share}) async {
+    final name = path.split('/').last;
+    await download_actions.downloadAndHandle(
+      context,
+      baseUrl: baseUrl,
+      token: token,
+      path: path,
+      name: name,
+      // Device: false → straight to the system share sheet; true → the
+      // Open/Install + Share sheet. Web: triggers a browser download either way.
+      fromMessage: !share,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: GestureDetector(
-        onTap: () => Navigator.of(context).pop(),
-        child: Center(
-          child: Hero(
-            tag: heroTag,
-            child: InteractiveViewer(
-              minScale: 1,
-              maxScale: 6,
-              child: media.MediaImage(
-                url: url,
-                headers: headers,
-                fit: BoxFit.contain,
-                loadingBuilder: (context, child, progress) => progress == null
-                    ? child
-                    : const Center(
-                        child: CircularProgressIndicator(
-                            color: gold, strokeWidth: 2),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: () => Navigator.of(context).pop(),
+              child: Center(
+                child: Hero(
+                  tag: heroTag,
+                  child: InteractiveViewer(
+                    minScale: 1,
+                    maxScale: 6,
+                    child: media.MediaImage(
+                      url: url,
+                      headers: headers,
+                      fit: BoxFit.contain,
+                      loadingBuilder: (context, child, progress) =>
+                          progress == null
+                              ? child
+                              : const Center(
+                                  child: CircularProgressIndicator(
+                                      color: gold, strokeWidth: 2),
+                                ),
+                      errorBuilder: (_, _, _) => const Center(
+                        child: Text('image unavailable',
+                            style: TextStyle(color: sand)),
                       ),
-                errorBuilder: (_, _, _) => const Center(
-                  child: Text('image unavailable',
-                      style: TextStyle(color: sand)),
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
-        ),
+          // Top-right action bar.
+          Positioned(
+            top: MediaQuery.paddingOf(context).top + 12,
+            right: 12,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: 'Share',
+                    icon: const Icon(Icons.share_rounded,
+                        color: Colors.white, size: 20),
+                    onPressed: () => _download(context, share: true),
+                  ),
+                  IconButton(
+                    tooltip: 'Download',
+                    icon: const Icon(Icons.download_rounded,
+                        color: Colors.white, size: 20),
+                    onPressed: () => _download(context, share: false),
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    icon: const Icon(Icons.close_rounded,
+                        color: Colors.white, size: 22),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
